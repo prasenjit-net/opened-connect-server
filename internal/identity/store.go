@@ -26,13 +26,18 @@ const (
 )
 
 type Profile struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      Role      `json:"role"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Claims
+	Sub                 string    `json:"sub"`
+	ClaimUpdatedAt      int64     `json:"updated_at"`
+	EmailVerified       bool      `json:"email_verified"`
+	PhoneNumberVerified bool      `json:"phone_number_verified"`
+	ID                  string    `json:"id"`
+	Email               string    `json:"email"`
+	Name                string    `json:"name"`
+	Role                Role      `json:"role"`
+	Active              bool      `json:"active"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 type User struct {

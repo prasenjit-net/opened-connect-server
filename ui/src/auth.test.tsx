@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "./context/AuthContext";
@@ -77,7 +77,7 @@ describe("account screens", () => {
     await userEvent.type(screen.getByLabelText("Email", { exact: true }), "new@example.com");
     await userEvent.type(screen.getByLabelText(/Initial password/), "a long safe password");
     await userEvent.click(screen.getByRole("button", { name: "Create user" }));
-    expect(create).toHaveBeenCalledWith({ name: "New User", email: "new@example.com", password: "a long safe password", active: true, role: "user" });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "New User", email: "new@example.com", password: "a long safe password", active: true, role: "user" }));
     expect(await screen.findByText("User created.")).toBeInTheDocument();
     await waitFor(() => expect(testRouter.state.location.pathname).toBe("/users/regular"));
     await act(async () => { testRouter.history.back(); });
@@ -92,7 +92,7 @@ describe("account screens", () => {
     await screen.findByRole("heading", { name: "Edit user" });
     await userEvent.selectOptions(screen.getByLabelText("Role", { exact: true }), "admin");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    expect(update).toHaveBeenCalledWith(regular.id, { name: regular.name, email: regular.email, role: "admin", active: true });
+    expect(update).toHaveBeenCalledWith(regular.id, expect.objectContaining({ name: regular.name, email: regular.email, role: "admin", active: true }));
     await userEvent.click(await screen.findByRole("button", { name: "Delete user" }));
     expect(remove).not.toHaveBeenCalled();
     await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Confirm delete" }));
@@ -118,6 +118,22 @@ describe("account screens", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     expect(api.users).toHaveBeenCalledTimes(2);
   });
+  it("lets regular users edit their own claims without showing administrative controls", async () => {
+    vi.mocked(api.session).mockResolvedValue(session(regular));
+    const update = vi.spyOn(api, "updateProfile").mockResolvedValue(regular);
+    setup("/profile");
+    await userEvent.type(await screen.findByLabelText("Given name"), "Alice");
+    const custom = screen.getByLabelText(/Custom attributes \(JSON\)/);
+    await userEvent.clear(custom);
+    fireEvent.change(custom, { target: { value: '{"department":"Research","enabled":true}' } });
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ given_name: "Alice", custom_attributes: { department: "Research", enabled: true } }));
+    expect(update.mock.calls[0][0]).not.toHaveProperty("role");
+    expect(update.mock.calls[0][0]).not.toHaveProperty("email_verified");
+    expect(within(screen.getByRole("navigation")).queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Email verified")).not.toBeInTheDocument();
+    expect(api.users).not.toHaveBeenCalled();
+  });
   it("updates the profile and signs out after a password change", async () => {
     const update = vi.spyOn(api, "updateProfile").mockResolvedValue({ ...admin, name: "Updated" });
     const change = vi.spyOn(api, "changePassword").mockResolvedValue(undefined);
@@ -126,7 +142,7 @@ describe("account screens", () => {
     await userEvent.clear(screen.getByLabelText("Name"));
     await userEvent.type(screen.getByLabelText("Name"), "Updated");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
-    expect(update).toHaveBeenCalledWith("Updated");
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ name: "Updated", email: admin.email }));
     await userEvent.type(screen.getByLabelText("Current password"), "old long password");
     await userEvent.type(screen.getByLabelText("New password", { exact: true }), "new long password");
     await userEvent.type(screen.getByLabelText("Confirm new password"), "new long password");

@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+import ProfileFields from "../components/ProfileFields";
+import { editableClaims, parseCustomAttributes } from "../lib/profile";
 import Badge from "../components/Badge";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -7,6 +9,9 @@ import { api } from "../lib/api";
 export default function ProfilePage() {
   const auth = useAuth();
   const { push } = useToast();
+  const [claims, setClaims] = useState(() => editableClaims(auth.user));
+  const [custom, setCustom] = useState(JSON.stringify(auth.user?.custom_attributes ?? {}, null, 2));
+  const [email, setEmail] = useState(auth.user?.email ?? "");
   const [name, setName] = useState(auth.user?.name ?? "");
   const [currentPassword, setCurrent] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +22,7 @@ export default function ProfilePage() {
   const [passwordError, setPasswordError] = useState("");
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (saving) return; setSaving(true); setProfileError("");
-    try { await api.updateProfile(name); await auth.refresh(); push("success", "Profile updated."); }
+    try { await api.updateProfile({ ...claims, custom_attributes: parseCustomAttributes(custom), name, email }); await auth.refresh(); push("success", "Profile updated."); }
     catch (error) { setProfileError(error instanceof Error ? error.message : "Unable to save profile."); }
     finally { setSaving(false); }
   };
@@ -34,7 +39,10 @@ export default function ProfilePage() {
       <div className="card-head"><h2>My profile</h2><Badge tone="accent">{auth.user?.role}</Badge></div>
       <form onSubmit={save} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5 text-sm font-medium">Name<input className="input" autoComplete="name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <div><p className="text-sm font-medium">Email</p><p className="mt-1 break-all text-sm text-ink-muted">{auth.user?.email}</p><p className="mt-1 text-xs text-ink-faint">Contact an administrator to change your email address or role.</p></div>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">Email<input className="input" type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <p className="text-xs text-ink-faint">Email verified: {auth.user?.email_verified ? "Yes" : "No"} · Phone verified: {auth.user?.phone_number_verified ? "Yes" : "No"}. Changing either value clears its verification.</p>
+        <p className="break-all text-xs text-ink-faint">Subject: {auth.user?.sub ?? auth.user?.id} · Updated: {auth.user?.updatedAt}</p>
+        <ProfileFields value={claims} onChange={setClaims} custom={custom} onCustomChange={setCustom} />
         {profileError && <p role="alert" className="text-sm text-err">{profileError}</p>}
         <button className="btn btn-primary self-start" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button>
       </form>

@@ -194,13 +194,11 @@ func (h *authHandler) profile(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, 200, current(r).User)
 }
 func (h *authHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Name string `json:"name"`
-	}
+	var in identity.ProfileInput
 	if !decode(w, r, &in) {
 		return
 	}
-	user, err := h.service.UpdateProfile(r.Context(), current(r).Session.Hash, in.Name)
+	user, err := h.service.UpdateProfile(r.Context(), current(r).Session.Hash, in)
 	if err != nil {
 		h.failure(w, err)
 		return

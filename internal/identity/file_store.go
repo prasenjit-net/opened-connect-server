@@ -114,12 +114,12 @@ func (s *fileState) User(id string) (User, error) {
 	if !ok {
 		return User{}, ErrNotFound
 	}
-	return u, nil
+	return cloneUser(u), nil
 }
 func (s *fileState) UserByEmail(email string) (User, error) {
 	for _, u := range s.UsersMap {
 		if strings.EqualFold(u.Email, email) {
-			return u, nil
+			return cloneUser(u), nil
 		}
 	}
 	return User{}, ErrNotFound
@@ -127,7 +127,7 @@ func (s *fileState) UserByEmail(email string) (User, error) {
 func (s *fileState) Users() []User {
 	result := make([]User, 0, len(s.UsersMap))
 	for _, u := range s.UsersMap {
-		result = append(result, u)
+		result = append(result, cloneUser(u))
 	}
 	return result
 }
@@ -144,7 +144,7 @@ func (s *fileState) SaveUser(user User) error {
 			return ErrConflict
 		}
 	}
-	s.UsersMap[user.ID] = user
+	s.UsersMap[user.ID] = cloneUser(user)
 	return nil
 }
 func (s *fileState) DeleteUser(id string)        { delete(s.UsersMap, id); s.DeleteUserSessions(id) }

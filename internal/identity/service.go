@@ -27,10 +27,13 @@ type LoginResult struct {
 	Token string
 }
 type UserInput struct {
-	Name   string `json:"name"`
-	Email  string `json:"email"`
-	Role   Role   `json:"role"`
-	Active bool   `json:"active"`
+	*Claims
+	EmailVerified       bool   `json:"email_verified"`
+	PhoneNumberVerified bool   `json:"phone_number_verified"`
+	Name                string `json:"name"`
+	Email               string `json:"email"`
+	Role                Role   `json:"role"`
+	Active              bool   `json:"active"`
 }
 type ListOptions struct {
 	Query    string
@@ -62,6 +65,12 @@ func SessionHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 func normalize(input UserInput) (UserInput, error) {
+	if input.PhoneNumberVerified && (input.Claims == nil || strings.TrimSpace(input.PhoneNumber) == "") {
+		return input, ValidationError("A phone number is required before it can be marked verified.")
+	}
+	if err := validateClaims(input.Claims); err != nil {
+		return input, err
+	}
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.Name = strings.TrimSpace(input.Name)
 	address, err := mail.ParseAddress(input.Email)
@@ -90,7 +99,11 @@ func (s *Service) buildUser(input UserInput, password string) (User, error) {
 		return User{}, err
 	}
 	now := s.now().UTC()
-	return User{Profile: Profile{ID: id, Name: input.Name, Email: input.Email, Role: input.Role, Active: input.Active, CreatedAt: now, UpdatedAt: now}, PasswordHash: hash}, nil
+	claims := Claims{}
+	if input.Claims != nil {
+		claims = *input.Claims
+	}
+	return cloneUser(User{Profile: Profile{Claims: claims, EmailVerified: input.EmailVerified, PhoneNumberVerified: input.PhoneNumberVerified, ID: id, Name: input.Name, Email: input.Email, Role: input.Role, Active: input.Active, CreatedAt: now, UpdatedAt: now}, PasswordHash: hash}), nil
 }
 
 func (s *Service) Bootstrap(ctx context.Context, name, email, password string) (Profile, error) {
@@ -302,11 +315,17 @@ func (s *Service) UpdateUser(ctx context.Context, hash, id string, input UserInp
 		if user.Role != input.Role || user.Active != input.Active || user.Email != input.Email {
 			tx.DeleteUserSessions(id)
 		}
+		if input.Claims != nil {
+			user.Claims = *input.Claims
+		}
+		user.EmailVerified = input.EmailVerified
+		user.PhoneNumberVerified = input.PhoneNumberVerified
 		user.Name = input.Name
 		user.Email = input.Email
 		user.Role = input.Role
 		user.Active = input.Active
 		user.UpdatedAt = s.now().UTC()
+		user = cloneUser(user)
 		if err = tx.SaveUser(user); err != nil {
 			return err
 		}
@@ -331,10 +350,9 @@ func (s *Service) DeleteUser(ctx context.Context, hash, id string) error {
 		return nil
 	})
 }
-func (s *Service) UpdateProfile(ctx context.Context, hash, name string) (Profile, error) {
-	name = strings.TrimSpace(name)
-	if !utf8.ValidString(name) || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 100 {
-		return Profile{}, ValidationError("Name must contain 1–100 characters.")
+func (s *Service) UpdateProfile(ctx context.Context, hash string, input ProfileInput) (Profile, error) {
+	if err := validateClaims(input.Claims); err != nil {
+		return Profile{}, err
 	}
 	var result Profile
 	err := s.store.Write(ctx, func(tx Tx) error {
@@ -346,8 +364,27 @@ func (s *Service) UpdateProfile(ctx context.Context, hash, name string) (Profile
 		if err != nil {
 			return err
 		}
-		u.Name = name
+		email := u.Email
+		if input.Email != nil {
+			email = *input.Email
+		}
+		normalized, err := normalize(UserInput{Name: input.Name, Email: email, Role: u.Role, Active: u.Active})
+		if err != nil {
+			return err
+		}
+		if normalized.Email != u.Email {
+			u.EmailVerified = false
+		}
+		if input.Claims != nil {
+			if input.PhoneNumber != u.PhoneNumber {
+				u.PhoneNumberVerified = false
+			}
+			u.Claims = *input.Claims
+		}
+		u.Name = normalized.Name
+		u.Email = normalized.Email
 		u.UpdatedAt = s.now().UTC()
+		u = cloneUser(u)
 		if err = tx.SaveUser(u); err != nil {
 			return err
 		}

@@ -304,3 +304,49 @@ func TestUserDetailAuthorizationAndPagination(t *testing.T) {
 		t.Fatalf("unexpected second page: %+v", page)
 	}
 }
+
+func TestExtendedProfilesAndEntitlements(t *testing.T) {
+	rig := newAuthRig(t)
+	admin := rig.login(t, "admin@example.com", testPassword)
+	create := map[string]any{"name": "Alice", "email": "alice@example.com", "role": "user", "active": true, "password": testPassword, "given_name": "Alice", "phone_number": "+12025550123", "email_verified": true, "phone_number_verified": true, "custom_attributes": map[string]any{"department": "Engineering", "levels": []any{1, true}}}
+	res := rig.request(t, "POST", "/users", create, admin)
+	expectStatus(t, res, 201)
+	aliceProfile := profileFrom(t, res)
+	alice := rig.login(t, "alice@example.com", testPassword)
+	path := "/users/" + aliceProfile.ID
+	for _, method := range []string{"GET", "PUT", "DELETE"} {
+		expectStatus(t, rig.request(t, method, path, create, alice), 403)
+		expectStatus(t, rig.request(t, method, path, create, browserSession{}), 401)
+	}
+	expectStatus(t, rig.request(t, "POST", "/users", create, alice), 403)
+	for _, field := range []string{"role", "active", "id", "sub", "updated_at", "email_verified", "phone_number_verified"} {
+		expectStatus(t, rig.request(t, "PUT", "/profile", map[string]any{"name": "Alice", field: true}, alice), 400)
+	}
+	input := map[string]any{"name": "Alice Updated", "email": "newalice@example.com", "given_name": "Alice", "family_name": "Example", "birthdate": "0000-02-29", "zoneinfo": "America/Los_Angeles", "locale": "en-US", "phone_number": "+12025550124", "address": map[string]any{"street_address": "123 Main St", "locality": "Example", "country": "US"}, "custom_attributes": map[string]any{"department": "Research", "preferences": map[string]any{"news": true}}}
+	expectStatus(t, rig.request(t, "PUT", "/profile", input, browserSession{cookie: alice.cookie}), 403)
+	res = rig.request(t, "PUT", "/profile", input, alice)
+	expectStatus(t, res, 200)
+	saved := profileFrom(t, res)
+	if saved.ID != aliceProfile.ID || saved.Sub != saved.ID || saved.Role != identity.RoleUser || saved.EmailVerified || saved.PhoneNumberVerified || saved.FamilyName != "Example" || saved.Address.Locality != "Example" || saved.ClaimUpdatedAt == 0 {
+		t.Fatalf("bad profile: %+v", saved)
+	}
+	res = rig.request(t, "GET", path, nil, admin)
+	expectStatus(t, res, 200)
+	if profileFrom(t, res).CustomAttributes["department"] == nil {
+		t.Fatal("custom attributes not persisted")
+	}
+	expectStatus(t, rig.request(t, "PUT", "/profile", map[string]any{"name": "Admin Updated", "nickname": "Boss"}, admin), 200)
+	// An admin can edit another user's profile and retain normal self-service access.
+	edit := map[string]any{"name": "Alice Admin Edited", "email": saved.Email, "role": "user", "active": true, "given_name": "Changed", "custom_attributes": map[string]any{"department": "Operations"}}
+	expectStatus(t, rig.request(t, "PUT", path, edit, admin), 200)
+	expectStatus(t, rig.request(t, "GET", "/profile", nil, admin), 200)
+	for _, bad := range []map[string]any{
+		{"name": "Alice", "picture": "javascript:alert(1)"},
+		{"name": "Alice", "birthdate": "2025-02-30"},
+		{"name": "Alice", "custom_attributes": map[string]any{"role": "admin"}},
+		{"name": "Alice", "custom_attributes": []any{1}},
+	} {
+		expectStatus(t, rig.request(t, "PUT", "/profile", bad, alice), 400)
+	}
+	expectStatus(t, rig.request(t, "GET", "/users", nil, alice), 403)
+}

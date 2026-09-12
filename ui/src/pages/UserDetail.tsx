@@ -47,6 +47,7 @@ export default function UserDetailPage() {
       <section className="card">
         <h2 className="text-lg font-semibold">{query.data.name}</h2>
         <p className="mt-1 break-all text-sm text-ink-muted">{query.data.email}</p>
+        <p className="mt-3 break-all text-xs text-ink-faint">Subject: {query.data.sub ?? query.data.id} · Updated: {query.data.updatedAt}</p>
         <p className="mt-3 text-xs text-ink-faint">Created {new Date(query.data.createdAt).toLocaleString()}</p>
       </section>
       <UserEditor key={query.data.id} user={query.data} onSave={save} onCancel={() => { void navigate({ to: "/users" }); }} />

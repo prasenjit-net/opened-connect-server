@@ -12,12 +12,21 @@ export interface ServerConfig {
 }
 
 export type Role = "user" | "admin";
-export interface User {
+export interface ProfileClaims {
+ given_name?: string; family_name?: string; middle_name?: string; nickname?: string;
+ preferred_username?: string; profile?: string; picture?: string; website?: string;
+ gender?: string; birthdate?: string; zoneinfo?: string; locale?: string; phone_number?: string;
+ address?: { formatted?: string; street_address?: string; locality?: string; region?: string; postal_code?: string; country?: string };
+ custom_attributes?: Record<string, unknown>;
+}
+export interface ProfileInput extends ProfileClaims { name: string; email: string; }
+export interface User extends ProfileClaims {
+ sub?: string; updated_at?: number; email_verified?: boolean; phone_number_verified?: boolean;
   id: string; name: string; email: string; role: Role; active: boolean;
   createdAt: string; updatedAt: string;
 }
 export interface Session { user: User; csrfToken: string; expiresAt: string; }
-export interface UserInput { name: string; email: string; role: Role; active: boolean; }
+export interface UserInput extends ProfileClaims { email_verified?: boolean; phone_number_verified?: boolean; name: string; email: string; role: Role; active: boolean; }
 export interface UserList { users: User[]; total: number; page: number; pageSize: number; }
 let csrfToken: string | null = null;
 export function setCSRFToken(token: string | null) { csrfToken = token; }
@@ -81,7 +90,7 @@ export const api = {
   session: () => request<Session>("/api/auth/session"),
   login: (email: string, password: string) => request<Session>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<void>("/api/auth/logout", { method: "POST", body: "{}" }),
-  updateProfile: (name: string) => request<User>("/api/profile", { method: "PUT", body: JSON.stringify({ name }) }),
+  updateProfile: (input: ProfileInput) => request<User>("/api/profile", { method: "PUT", body: JSON.stringify(input) }),
   changePassword: (currentPassword: string, newPassword: string) => request<void>("/api/profile/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
   users: (params: { q: string; role: string; status: string; page: number }, signal?: AbortSignal) => request<UserList>(`/api/users?${new URLSearchParams({ ...params, page: String(params.page), pageSize: "10" })}`, { signal }),
   user: (id: string) => request<User>(`/api/users/${encodeURIComponent(id)}`),

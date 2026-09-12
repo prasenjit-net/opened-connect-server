@@ -155,7 +155,7 @@ Initialization refuses to modify any existing user store, even with `--force`. T
 ## Authentication and authorization
 
 - Users sign in with their email address and password. Email uniqueness is case-insensitive.
-- `user` can use the application, view their profile, edit their display name, and change their own password after verifying the current password.
+- `user` can use the application, view their profile, edit their standard profile claims and custom attributes, and change their own password after verifying the current password.
 - `admin` additionally manages users. Role, email, and status changes revoke the affected user's sessions. Deletion also revokes sessions.
 - Sessions expire after `auth.sessionTTL` (8 hours by default). Logout revokes the current session; password changes revoke all sessions, including the current one.
 - The browser receives an opaque `HttpOnly`, `SameSite=Lax` session cookie. The server stores only its SHA-256 digest. Authentication tokens are never placed in browser local storage.
@@ -167,7 +167,7 @@ Initialization refuses to modify any existing user store, even with `--force`. T
 | `GET /api/config`, `GET /api/health`, `GET /livez` | Public bootstrap/health information |
 | `POST /api/auth/login` | Public; JSON and same-origin checks; throttled |
 | `GET /api/auth/session`, `POST /api/auth/logout` | Signed-in user |
-| `GET /api/profile`, `PUT /api/profile` | Own profile; only display name is editable |
+| `GET /api/profile`, `PUT /api/profile` | Own profile; editable claims and custom attributes |
 | `POST /api/profile/password` | Own account; current password required |
 | `GET /api/users`, `POST /api/users` | Admin |
 | `GET /api/users/{id}`, `PUT /api/users/{id}`, `DELETE /api/users/{id}` | Admin |
@@ -200,3 +200,9 @@ storage:
 Merge these settings into `config.yaml`. Outside `development`/`test`, startup requires an HTTPS public URL and forces Secure cookies. The server also adds HSTS for Secure-cookie deployments, frame denial, MIME-sniffing protection, and a same-origin referrer policy. Restrict access to the backend HTTP port to the reverse proxy. In development, HTTP cookies support localhost, and the configured Vite origin is allowed for API calls.
 
 The environment setting is `APP_APP_ENV` (not `APP_ENV`). Examples: `APP_APP_ENV=production`, `APP_APP_URL=https://identity.example.com`, `APP_STORAGE_DATADIR=/var/lib/opened-connect-server`.
+
+Profiles support the [OpenID Connect standard claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims): name, given/family/middle names, nickname, preferred username, profile/picture/website URLs, email, gender, birthdate, time zone, locale, phone number, and the structured address. `sub` is derived from the immutable account ID; `updated_at` is a server-generated Unix timestamp. Existing accounts remain compatible.
+
+Custom attributes are a separate `custom_attributes` JSON object supporting scalar, array, and object values (up to 50 names within the 16 KB request limit). They never grant application permissions or override standard claims. Supplying editable claims replaces that set; omitting them preserves existing values. Administrators manage email/phone verification flags. Self-service changes to email or phone clear the corresponding verification flag.
+
+Regular users access only their own profile through `/api/profile`; the server derives the target from the session and rejects identity, role, status, and verification fields. All `/api/users` endpoints require admin authorization. Admins retain all self-service capabilities. The Users navigation entry and management routes are hidden/guarded for regular users.
