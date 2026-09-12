@@ -1,15 +1,8 @@
-# Go App Template
+# OpenID Connect Server
 
-A production-ready GitHub template repository for full-stack applications with:
+OpenID Connect Server is a Go application with an embedded React administration console. The console displays server health, configuration, build information, and API examples.
 
-- Go backend at the repository root
-- React + Vite frontend in `ui/`
-- Embedded production UI served directly from the Go binary
-- Cobra CLI, Viper config, `.env` support, and a Tailwind-based admin shell modeled after the reference project
-
-The design and developer experience are intentionally based on the original reference implementation, but generalized into a reusable starter.
-
-App repository: `https://github.com/prasenjit-net/go-app-template`
+Repository: https://github.com/prasenjit-net/opened-connect-server
 
 ## What You Get
 
@@ -61,7 +54,7 @@ That gives you one deployment artifact: the compiled Go executable.
 ### Prerequisites
 
 - Go 1.23+
-- Node.js 20+
+- Node.js 22.12+
 - npm
 
 ### Initial Setup
@@ -95,7 +88,7 @@ make lint-ui    # eslint for the React app
 
 ```bash
 make build
-./build/$(basename "$PWD") serve
+./build/opened-connect-server serve
 ```
 
 The binary contains the compiled React app. No separate Node.js server is required in production.
@@ -117,40 +110,6 @@ APP_SERVER_PORT=9090
 APP_LOGGING_LEVEL=debug
 APP_UI_DEV_PROXY_URL=http://localhost:5173
 ```
-
-## UI Notes
-
-The frontend mirrors the reference repo’s patterns:
-
-- fixed left sidebar shell
-- card-based dashboard layout
-- Tailwind utility styling with shared badges and section headers
-- light/dark/system theme toggle
-- React Query service layer for API integration
-
-The starter keeps the same feel without hard-coding the reference project’s domain-specific screens.
-
-## GitHub Template Setup
-
-GitHub template mode is a repository setting, not a tracked file. After pushing this repo:
-
-1. Open the repository on GitHub.
-2. Go to `Settings`.
-3. In `General`, enable `Template repository`.
-4. Share the repository URL so users can click `Use this template`.
-
-## Renaming After Creating a New Repo
-
-After generating a repo from this template:
-
-1. Rename the repository on GitHub.
-2. Update the Go module path:
-   ```bash
-   go mod edit -module github.com/<owner>/<new-repo>
-   go mod tidy
-   ```
-3. Update the app name in `config.yaml` and `.env`.
-4. Optionally update the UI package name in `ui/package.json`.
 
 ## Files to Review First
 

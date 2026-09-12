@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import DashboardPage from './pages/DashboardPage'
 import ExamplesPage from './pages/ExamplesPage'
 import SettingsPage from './pages/SettingsPage'
+import NotFoundPage from './pages/NotFoundPage'
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="examples" element={<ExamplesPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   )

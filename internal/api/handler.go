@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/your-org/go-app-template/internal/config"
-	"github.com/your-org/go-app-template/internal/version"
+	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 type Handler struct {
@@ -62,11 +62,11 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Example(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, exampleResponse{
-		Title:       "Go + React starter template",
+		Title:       "OpenID Connect Server",
 		Summary:     "Embed a Vite-generated React application directly into the Go binary with one production build.",
 		Features:    []string{"Cobra CLI commands", "Viper config + .env support", "Chi API router", "Embedded SPA serving", "React Query + Tailwind UI"},
-		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/<binary> serve"},
-		Repository:  "Template repository",
+		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/opened-connect-server serve"},
+		Repository:  "https://github.com/prasenjit-net/opened-connect-server",
 		FrontendDir: "ui",
 	})
 }

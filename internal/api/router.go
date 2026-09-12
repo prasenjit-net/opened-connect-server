@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/your-org/go-app-template/internal/config"
-	"github.com/your-org/go-app-template/internal/version"
+	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info) http.Handler {

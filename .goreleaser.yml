@@ -5,12 +5,12 @@ before:
     - npm run build --prefix ui
 
 builds:
-  - binary: "{{ .ProjectName }}"
+  - binary: opened-connect-server
     ldflags:
       - -s -w
-      - -X github.com/your-org/go-app-template/internal/version.Version={{ .Version }}
-      - -X github.com/your-org/go-app-template/internal/version.Commit={{ .Commit }}
-      - -X github.com/your-org/go-app-template/internal/version.BuildDate={{ .Date }}
+      - -X github.com/prasenjit-net/opened-connect-server/internal/version.Version={{ .Version }}
+      - -X github.com/prasenjit-net/opened-connect-server/internal/version.Commit={{ .Commit }}
+      - -X github.com/prasenjit-net/opened-connect-server/internal/version.BuildDate={{ .Date }}
     goos:
       - linux
       - darwin

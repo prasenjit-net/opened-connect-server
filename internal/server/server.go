@@ -14,9 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/your-org/go-app-template/internal/api"
-	"github.com/your-org/go-app-template/internal/config"
-	"github.com/your-org/go-app-template/internal/version"
+	"github.com/prasenjit-net/opened-connect-server/internal/api"
+	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 type Options struct {
@@ -108,7 +108,9 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	indexReq := r.Clone(r.Context())
-	indexReq.URL.Path = "/index.html"
+	// FileServer redirects /index.html to ./, which loses the SPA route.
+	// Serving the root loads index.html without redirecting the browser.
+	indexReq.URL.Path = "/"
 	h.fileServer.ServeHTTP(w, indexReq)
 }
 

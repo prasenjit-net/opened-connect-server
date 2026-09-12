@@ -8,7 +8,7 @@ import { metaApi } from '../services/api'
 
 type ThemeMode = 'light' | 'dark' | 'system'
 
-const themeStorageKey = 'go-app-template-theme'
+const themeStorageKey = 'opened-connect-server-theme'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -16,7 +16,7 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-const appRepoUrl = 'https://github.com/prasenjit-net/go-app-template'
+const appRepoUrl = 'https://github.com/prasenjit-net/opened-connect-server'
 
 const getInitialTheme = (): ThemeMode => {
   if (typeof window === 'undefined') {
@@ -58,7 +58,7 @@ export default function Layout() {
   }, [themeMode])
 
   useEffect(() => {
-    document.title = meta?.name || 'Go App Template'
+    document.title = meta?.name || 'OpenID Connect Server'
   }, [meta?.name])
 
   useEffect(() => {
@@ -85,7 +85,7 @@ export default function Layout() {
     <div className="flex h-screen overflow-hidden bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-100">
       <aside className="hidden h-screen w-64 flex-col border-r border-gray-200 bg-white lg:flex dark:border-slate-800 dark:bg-slate-900">
         <div className="flex h-16 items-center border-b border-gray-200 px-5 dark:border-slate-800">
-          <LogoFull iconSize={36} title="go-app" />
+          <LogoFull iconSize={36} title={meta?.name ?? 'OpenID Connect Server'} />
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-6">
@@ -149,8 +149,8 @@ export default function Layout() {
 
           <div className="border-t border-gray-200 p-4 dark:border-slate-800">
             <div className="text-xs text-gray-500 dark:text-slate-400">
-              <p className="font-medium">{meta?.name ?? 'Go App Template'}</p>
-              <p>{meta?.description ?? 'Embedded Go + React starter'}</p>
+              <p className="font-medium">{meta?.name ?? 'OpenID Connect Server'}</p>
+              <p>{meta?.description ?? 'API and administration console'}</p>
             </div>
           </div>
         </div>
@@ -169,7 +169,7 @@ export default function Layout() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <LogoFull iconSize={32} title="go-app" />
+            <LogoFull iconSize={32} title={meta?.name ?? 'OpenID Connect Server'} />
             <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 dark:bg-slate-800">
               {themeOptions.map((option) => (
                 <button
@@ -207,7 +207,7 @@ export default function Layout() {
           aria-hidden={!isDrawerOpen}
         >
           <div className="flex h-16 items-center justify-between border-b border-gray-200 px-5 dark:border-slate-800">
-            <LogoFull iconSize={34} title="go-app" />
+            <LogoFull iconSize={34} title={meta?.name ?? 'OpenID Connect Server'} />
             <button
               type="button"
               onClick={() => setIsDrawerOpen(false)}
@@ -255,8 +255,8 @@ export default function Layout() {
           </nav>
 
           <div className="border-t border-gray-200 p-4 text-xs text-gray-500 dark:border-slate-800 dark:text-slate-400">
-            <p className="font-medium">{meta?.name ?? 'Go App Template'}</p>
-            <p>{meta?.description ?? 'Embedded Go + React starter'}</p>
+            <p className="font-medium">{meta?.name ?? 'OpenID Connect Server'}</p>
+            <p>{meta?.description ?? 'API and administration console'}</p>
           </div>
         </aside>
 

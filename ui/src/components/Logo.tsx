@@ -12,7 +12,7 @@ export function LogoIcon({ size = 36, className }: LogoIconProps) {
       height={size}
       className={className}
       role="img"
-      aria-label="Go app template logo"
+      aria-label="OpenID Connect Server logo"
     >
       <rect
         x="28"
@@ -45,14 +45,12 @@ interface LogoFullProps {
   title?: string
 }
 
-export function LogoFull({ iconSize = 36, title = 'go-app' }: LogoFullProps) {
+export function LogoFull({ iconSize = 36, title = 'OpenID Connect Server' }: LogoFullProps) {
   return (
     <div className="flex items-center gap-2.5">
       <LogoIcon size={iconSize} />
-      <span className="select-none text-lg font-bold tracking-tight leading-none">
-        <span className="text-indigo-700 dark:text-indigo-300">{title.split('-')[0]}</span>
-        <span className="text-slate-400 dark:text-slate-500">-</span>
-        <span className="text-violet-700 dark:text-violet-300">{title.split('-')[1] ?? 'template'}</span>
+      <span className="select-none text-sm font-bold tracking-tight leading-tight text-indigo-700 dark:text-indigo-300">
+        {title}
       </span>
     </div>
   )

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/your-org/go-app-template/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/config"
 )
 
 var (
@@ -16,7 +16,7 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Write starter config and local development files",
+	Short: "Write application config and local development files",
 	RunE:  runInit,
 }
 

@@ -11,16 +11,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/your-org/go-app-template/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/config"
 )
 
 var (
 	cfgFile string
 	uiFS    fs.FS
 	rootCmd = &cobra.Command{
-		Use:   "go-app-template",
-		Short: "Go + React starter with an embedded frontend",
-		Long:  "A production-ready template for shipping a Go API and React frontend as a single binary.",
+		Use:   "opened-connect-server",
+		Short: "OpenID Connect Server with an embedded administration console",
+		Long:  "Run OpenID Connect Server and its administration console from a single binary.",
 	}
 )
 

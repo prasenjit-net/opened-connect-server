@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/your-org/go-app-template/internal/version"
+	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 var versionCmd = &cobra.Command{

@@ -1,8 +1,8 @@
 app:
-  name: Go App Template
+  name: OpenID Connect Server
   env: development
   url: http://localhost:8080
-  description: Full-stack starter with Go at the repo root and an embedded React UI.
+  description: OpenID Connect Server API and administration console.
 
 server:
   host: 0.0.0.0

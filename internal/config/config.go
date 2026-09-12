@@ -45,10 +45,10 @@ type UIConfig struct {
 func Default() Config {
 	return Config{
 		App: AppConfig{
-			Name:        "Go App Template",
+			Name:        "OpenID Connect Server",
 			Env:         "development",
 			URL:         "http://localhost:8080",
-			Description: "Full-stack starter with an embedded React frontend.",
+			Description: "OpenID Connect Server API and administration console.",
 		},
 		Server: ServerConfig{
 			Host:            "0.0.0.0",
@@ -141,10 +141,10 @@ func fileExists(path string) bool {
 }
 
 const DefaultConfigYAML = `app:
-  name: Go App Template
+  name: OpenID Connect Server
   env: development
   url: http://localhost:8080
-  description: Full-stack starter with Go at the repo root and an embedded React UI.
+  description: OpenID Connect Server API and administration console.
 
 server:
   host: 0.0.0.0
@@ -163,7 +163,7 @@ ui:
 `
 
 const DefaultEnvExample = `APP_ENV=development
-APP_APP_NAME=Go App Template
+APP_APP_NAME=OpenID Connect Server
 APP_SERVER_HOST=0.0.0.0
 APP_SERVER_PORT=8080
 APP_LOGGING_LEVEL=debug

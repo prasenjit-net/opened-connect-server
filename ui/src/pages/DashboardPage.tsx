@@ -47,7 +47,7 @@ export default function DashboardPage() {
     <div className="space-y-8 p-8">
       <SectionHeader
         title="Dashboard"
-        description="A generalized admin shell based on the reference project’s layout and card system."
+        description="Monitor OpenID Connect Server health, environment, and build information."
         action={<StatusBadge status={health.status} />}
       />
 
@@ -60,7 +60,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Template Features</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Server Capabilities</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">{example.summary}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             {example.features.map((feature) => (
@@ -87,12 +87,12 @@ export default function DashboardPage() {
       </div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Starter File Guide</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Project Files</h2>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           {health.documents.map((document) => (
             <div key={document} className="rounded-lg border border-dashed border-gray-300 p-4 dark:border-slate-700">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">{document}</div>
-              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Use this area for your own domain modules once the template has been renamed.</p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">See this project resource for configuration and development details.</p>
             </div>
           ))}
         </div>

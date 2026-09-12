@@ -1,6 +1,6 @@
 package main
 
-import "github.com/your-org/go-app-template/cmd/app"
+import "github.com/prasenjit-net/opened-connect-server/cmd/app"
 
 func main() {
 	app.Execute(embeddedUI)

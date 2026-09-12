@@ -19,7 +19,7 @@ export default function ExamplesPage() {
     <div className="space-y-8 p-8">
       <SectionHeader
         title="Example API Layer"
-        description="Simple React Query fetchers and typed payloads are included so the template starts with a clean integration boundary."
+        description="Inspect health and example responses from the running server."
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -45,11 +45,11 @@ export default function ExamplesPage() {
       </div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Suggested starter workflow</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-slate-100">Development Workflow</h2>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           {[
             ['1', 'Add domain routes', 'Create handlers in internal/api and mount them under /api.'],
-            ['2', 'Replace starter pages', 'Swap the example screens in ui/src/pages with your own modules.'],
+            ['2', 'Update application pages', 'Develop application screens in ui/src/pages.'],
             ['3', 'Ship one binary', 'Use make build to regenerate ui/dist and compile the embedded executable.'],
           ].map(([step, title, description]) => (
             <div key={step} className="rounded-lg border border-gray-200 p-4 dark:border-slate-800">
