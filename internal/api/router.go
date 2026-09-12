@@ -32,6 +32,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, servi
 		r.Post("/profile/password", auth.password)
 		r.Group(func(r chi.Router) {
 			r.Use(auth.admin)
+			r.Get("/clients", auth.clients)
+			r.Post("/clients", auth.saveClient)
+			r.Get("/clients/{id}", auth.client)
+			r.Put("/clients/{id}", auth.saveClient)
+			r.Delete("/clients/{id}", auth.deleteClient)
+			r.Post("/clients/{id}/secret", auth.rotateClientSecret)
 			r.Get("/users", auth.users)
 			r.Post("/users", auth.createUser)
 			r.Get("/users/{id}", auth.user)

@@ -13,6 +13,11 @@ import { UserSearchProvider } from "./context/UserSearchContext";
 import UserDetailPage from "./pages/UserDetail";
 import UserCreatePage from "./pages/UserCreate";
 
+import { ClientSearchProvider } from "./context/ClientSearchContext";
+import ClientsPage from "./pages/Clients";
+import ClientCreatePage from "./pages/ClientCreate";
+import ClientDetailPage from "./pages/ClientDetail";
+
 const rootRoute = createRootRoute({ component: Outlet });
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -32,8 +37,13 @@ const userSearchRoute = createRoute({ getParentRoute: () => usersRoute, path: "/
 const userCreateRoute = createRoute({ getParentRoute: () => usersRoute, path: "new", component: UserCreatePage });
 const userDetailRoute = createRoute({ getParentRoute: () => usersRoute, path: "$userId", component: UserDetailPage });
 
+const clientsRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/clients", component: () => <AdminGuard><ClientSearchProvider><Outlet /></ClientSearchProvider></AdminGuard> });
+const clientSearchRoute = createRoute({ getParentRoute: () => clientsRoute, path: "/", component: ClientsPage });
+const clientCreateRoute = createRoute({ getParentRoute: () => clientsRoute, path: "new", component: ClientCreatePage });
+const clientDetailRoute = createRoute({ getParentRoute: () => clientsRoute, path: "$clientId", component: ClientDetailPage });
+
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([loginRoute, protectedRoute.addChildren([dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
+  routeTree: rootRoute.addChildren([loginRoute, protectedRoute.addChildren([dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, clientsRoute.addChildren([clientSearchRoute, clientCreateRoute, clientDetailRoute]), usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
   defaultNotFoundComponent: NotFoundPage,
 });
 declare module "@tanstack/react-router" { interface Register { router: typeof router; } }

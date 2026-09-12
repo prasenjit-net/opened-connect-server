@@ -54,6 +54,8 @@ type Session struct {
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	Client(id string) (ClientRecord, error)
+	Clients() []ClientRecord
 	User(id string) (User, error)
 	UserByEmail(email string) (User, error)
 	Users() []User
@@ -61,6 +63,8 @@ type ReadTx interface {
 }
 
 type Tx interface {
+	SaveClient(ClientRecord)
+	DeleteClient(id string)
 	ReadTx
 	SaveUser(User) error
 	DeleteUser(id string)

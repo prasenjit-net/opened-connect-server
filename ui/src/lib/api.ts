@@ -1,3 +1,4 @@
+import type { ClientMetadata, ClientList, ClientResult, OIDCClient } from "./clients";
 export interface UiConfig {
   appName: string;
   tagline: string;
@@ -87,6 +88,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  clients: (params: { q: string; page: number }, signal?: AbortSignal) => request<ClientList>(`/api/clients?${new URLSearchParams({ q: params.q, page: String(params.page) })}`, { signal }),
+  client: (id: string) => request<OIDCClient>(`/api/clients/${encodeURIComponent(id)}`),
+  createClient: (input: ClientMetadata) => request<ClientResult>("/api/clients", { method: "POST", body: JSON.stringify(input) }),
+  updateClient: (id: string, input: ClientMetadata) => request<ClientResult>(`/api/clients/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) }),
+  deleteClient: (id: string) => request<void>(`/api/clients/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
+  rotateClientSecret: (id: string) => request<ClientResult>(`/api/clients/${encodeURIComponent(id)}/secret`, { method: "POST", body: "{}" }),
   session: () => request<Session>("/api/auth/session"),
   login: (email: string, password: string) => request<Session>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<void>("/api/auth/logout", { method: "POST", body: "{}" }),

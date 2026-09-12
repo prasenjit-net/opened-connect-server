@@ -206,3 +206,24 @@ Profiles support the [OpenID Connect standard claims](https://openid.net/specs/o
 Custom attributes are a separate `custom_attributes` JSON object supporting scalar, array, and object values (up to 50 names within the 16 KB request limit). They never grant application permissions or override standard claims. Supplying editable claims replaces that set; omitting them preserves existing values. Administrators manage email/phone verification flags. Self-service changes to email or phone clear the corresponding verification flag.
 
 Regular users access only their own profile through `/api/profile`; the server derives the target from the session and rejects identity, role, status, and verification fields. All `/api/users` endpoints require admin authorization. Admins retain all self-service capabilities. The Users navigation entry and management routes are hidden/guarded for regular users.
+
+## Client management
+
+Administrators manage OpenID Connect clients at `/clients`, `/clients/new`, and `/clients/$clientId`. Search runs only on submission, matches client name or ID, and returns 10 clients per page. Detail/create navigation preserves the search draft, results, and current page. Creating a client replaces the create history entry with detail, so browser Back returns to search. Regular users cannot see the Clients menu or access its pages/APIs.
+
+| Endpoint | Operation |
+| --- | --- |
+| `GET /api/clients?q=portal&page=1` | Search; fixed page size 10 |
+| `POST /api/clients` | Create a client |
+| `GET /api/clients/{id}` | Read client metadata |
+| `PUT /api/clients/{id}` | Replace editable metadata |
+| `DELETE /api/clients/{id}` | Delete a client |
+| `POST /api/clients/{id}/secret` | Rotate its secret; send `{}` |
+
+All endpoints require an admin session; mutations also require the session CSRF token. Metadata uses the top-level names from [OpenID Connect Dynamic Client Registration 1.0, section 2](https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata), including language-tagged display fields. The editor exposes application/redirect settings, response/grant types, contacts and display URLs, authentication method, subject settings, public JWKS, signing/encryption preferences, authentication-age defaults, ACR values, and request/login URIs. Unknown and server-managed input fields are rejected. PUT replaces metadata and reapplies specification defaults for omitted defaulted fields.
+
+This is the administrative client registry. OAuth authorization/token processing and public dynamic registration are separate features; metadata does not enable those protocol endpoints. Referenced JWKS, sector-identifier documents, and request objects are stored as URLs without fetching them. Their runtime content and cryptographic checks belong to the protocol implementation. Web redirects require HTTPS, with HTTP loopback allowed for code flow; native redirects follow the registration specification's custom-scheme/HTTP-loopback rules. Insecure RSA1_5 encryption is not accepted.
+
+The server generates immutable `client_id` and `client_id_issued_at`. A `client_secret`, when required by the authentication or symmetric cryptographic metadata, is returned only on creation, first issuance after a metadata change, or rotation. Read/search responses never include it. Secrets have `client_secret_expires_at: 0` (no automatic expiry). The UI keeps a newly issued secret only in memory until dismissal or leaving its detail page, outside the query cache and browser storage. Rotation immediately replaces the stored secret.
+
+Clients share the transactional `identity.Store` interface and local `data/identity.json` store. Existing identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data. The encryption key is stored separately in `data/client-secrets.key` (mode 0600); back up both files together. Missing/invalid keys fail closed. Database adapters implement the client transaction methods and their own secret protection.

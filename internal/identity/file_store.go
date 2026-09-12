@@ -14,9 +14,10 @@ import (
 
 type FileStore struct{ path string }
 type fileState struct {
-	Version  int                `json:"version"`
-	UsersMap map[string]User    `json:"users"`
-	Sessions map[string]Session `json:"sessions"`
+	ClientsMap map[string]ClientRecord `json:"clients,omitempty"`
+	Version    int                     `json:"version"`
+	UsersMap   map[string]User         `json:"users"`
+	Sessions   map[string]Session      `json:"sessions"`
 }
 
 func NewFileStore(dir string) (*FileStore, error) {
@@ -76,11 +77,17 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 	if err = ctx.Err(); err != nil {
 		return err
 	}
+	if err = s.transformClientSecrets(&state, false); err != nil {
+		return err
+	}
 	if err = fn(&state); err != nil {
 		return err
 	}
 	if !write {
 		return nil
+	}
+	if err = s.transformClientSecrets(&state, true); err != nil {
+		return err
 	}
 	content, err = json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -164,3 +171,25 @@ func (s *fileState) PruneSessions(now time.Time) {
 		}
 	}
 }
+
+func (s *fileState) Client(id string) (ClientRecord, error) {
+	c, ok := s.ClientsMap[id]
+	if !ok {
+		return ClientRecord{}, ErrNotFound
+	}
+	return cloneClient(c), nil
+}
+func (s *fileState) Clients() []ClientRecord {
+	result := make([]ClientRecord, 0, len(s.ClientsMap))
+	for _, c := range s.ClientsMap {
+		result = append(result, cloneClient(c))
+	}
+	return result
+}
+func (s *fileState) SaveClient(c ClientRecord) {
+	if s.ClientsMap == nil {
+		s.ClientsMap = map[string]ClientRecord{}
+	}
+	s.ClientsMap[c.ID] = cloneClient(c)
+}
+func (s *fileState) DeleteClient(id string) { delete(s.ClientsMap, id) }

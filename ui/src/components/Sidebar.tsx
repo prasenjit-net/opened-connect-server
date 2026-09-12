@@ -6,7 +6,7 @@ import { IconDashboard, IconExternal, IconSliders, IconBolt, IconX, IconUsers } 
 import Logo from "./Logo";
 
 interface NavItem {
-  to: "/" | "/components" | "/settings" | "/users" | "/profile";
+  to: "/" | "/components" | "/settings" | "/users" | "/profile" | "/clients";
   admin?: boolean;
   label: string;
   icon: ReactElement;
@@ -15,6 +15,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <IconDashboard size={20} /> },
   { to: "/users", label: "Users", icon: <IconUsers size={20} />, admin: true },
+  { to: "/clients", label: "Clients", icon: <IconBolt size={20} />, admin: true },
   { to: "/components", label: "Components", icon: <IconBolt size={20} /> },
   { to: "/profile", label: "My profile", icon: <IconUsers size={20} /> },
   { to: "/settings", label: "Settings", icon: <IconSliders size={20} /> },
@@ -77,7 +78,7 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
             key={item.to}
             to={item.to}
             title={collapsed ? item.label : undefined}
-            className={itemCls(pathname === item.to || (item.to === "/users" && pathname.startsWith("/users/")))}
+            className={itemCls(pathname === item.to || ((item.to === "/users" || item.to === "/clients") && pathname.startsWith(item.to + "/")))}
           >
             <span className="inline-flex shrink-0">{item.icon}</span>
             <span className={labelCls}>{item.label}</span>
