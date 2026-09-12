@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "./context/AuthContext";
@@ -23,7 +23,8 @@ function setup(path: string) {
 }
 beforeEach(() => {
   vi.spyOn(api, "session").mockResolvedValue(session(admin));
-  vi.spyOn(api, "users").mockResolvedValue({ users: [admin, regular], total: 2, page: 1, pageSize: 20 });
+  vi.spyOn(api, "user").mockResolvedValue(regular);
+  vi.spyOn(api, "users").mockResolvedValue({ users: [admin, regular], total: 2, page: 1, pageSize: 10 });
 });
 
 describe("authentication UI", () => {
@@ -36,7 +37,7 @@ describe("authentication UI", () => {
     await userEvent.type(screen.getByLabelText("Email"), admin.email);
     await userEvent.type(screen.getByLabelText("Password"), "a long safe password");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByRole("button", { name: "Add user" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Add user" })).toBeInTheDocument();
     expect(login).toHaveBeenCalledWith(admin.email, "a long safe password");
     expect(testRouter.state.location.pathname).toBe("/users");
     expect(window.localStorage.length).toBe(0);
@@ -50,7 +51,7 @@ describe("authentication UI", () => {
   });
   it("clears private cached data when the server rejects the session", async () => {
     const { client } = setup("/users");
-    await screen.findByRole("button", { name: "Add user" });
+    await screen.findByRole("link", { name: "Add user" });
     await act(async () => { window.dispatchEvent(new Event("session-expired")); });
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
     expect(client.getQueriesData({ queryKey: ["users"] })).toEqual([]);
@@ -64,31 +65,58 @@ describe("authentication UI", () => {
 describe("account screens", () => {
   it("searches and creates a user with the default user role", async () => {
     const create = vi.spyOn(api, "createUser").mockResolvedValue(regular);
-    setup("/users");
-    await screen.findByRole("button", { name: "Add user" });
+    const { testRouter } = setup("/users");
+    await screen.findByRole("link", { name: "Add user" });
+    expect(api.users).not.toHaveBeenCalled();
     await userEvent.type(screen.getByLabelText("Search users"), "regular");
+    expect(api.users).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
-    expect(api.users).toHaveBeenLastCalledWith({ q: "regular", role: "", status: "", page: 1 });
-    await userEvent.click(screen.getByRole("button", { name: "Add user" }));
+    expect(api.users).toHaveBeenLastCalledWith({ q: "regular", role: "", status: "", page: 1 }, expect.any(AbortSignal));
+    await userEvent.click(screen.getByRole("link", { name: "Add user" }));
     await userEvent.type(screen.getByLabelText("Name", { exact: true }), "New User");
     await userEvent.type(screen.getByLabelText("Email", { exact: true }), "new@example.com");
     await userEvent.type(screen.getByLabelText(/Initial password/), "a long safe password");
     await userEvent.click(screen.getByRole("button", { name: "Create user" }));
     expect(create).toHaveBeenCalledWith({ name: "New User", email: "new@example.com", password: "a long safe password", active: true, role: "user" });
     expect(await screen.findByText("User created.")).toBeInTheDocument();
+    await waitFor(() => expect(testRouter.state.location.pathname).toBe("/users/regular"));
+    await act(async () => { testRouter.history.back(); });
+    expect(await screen.findByLabelText("Search users")).toHaveValue("regular");
+    expect(await screen.findByRole("link", { name: "Regular" })).toBeInTheDocument();
+    expect(api.users).toHaveBeenCalledTimes(1);
   });
   it("updates a user's role and requires confirmation before deletion", async () => {
     const update = vi.spyOn(api, "updateUser").mockResolvedValue({ ...regular, role: "admin" });
     const remove = vi.spyOn(api, "deleteUser").mockResolvedValue(undefined);
-    setup("/users");
-    await userEvent.click(await screen.findByRole("button", { name: `Edit ${regular.email}` }));
+    setup("/users/regular");
+    await screen.findByRole("heading", { name: "Edit user" });
     await userEvent.selectOptions(screen.getByLabelText("Role", { exact: true }), "admin");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledWith(regular.id, { name: regular.name, email: regular.email, role: "admin", active: true });
-    await userEvent.click(await screen.findByRole("button", { name: `Delete ${regular.email}` }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete user" }));
     expect(remove).not.toHaveBeenCalled();
     await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Confirm delete" }));
     expect(remove).toHaveBeenCalledWith(regular.id);
+  });
+  it("preserves page, drafts, and results when returning from detail without another search", async () => {
+    vi.mocked(api.users)
+      .mockResolvedValueOnce({ users: [admin], total: 11, page: 1, pageSize: 10 })
+      .mockResolvedValueOnce({ users: [regular], total: 11, page: 2, pageSize: 10 });
+    setup("/users");
+    await userEvent.type(await screen.findByLabelText("Search users"), "submitted");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByRole("link", { name: "admin@example.com" });
+    await userEvent.clear(screen.getByLabelText("Search users"));
+    await userEvent.type(screen.getByLabelText("Search users"), "unsent draft");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(api.users).toHaveBeenLastCalledWith({ q: "submitted", role: "", status: "", page: 2 }, expect.any(AbortSignal));
+    await userEvent.click(await screen.findByRole("link", { name: "Regular" }));
+    await screen.findByRole("heading", { name: "Edit user" });
+    await userEvent.click(screen.getByRole("link", { name: /Back to user search/ }));
+    expect(await screen.findByLabelText("Search users")).toHaveValue("unsent draft");
+    expect(screen.getByRole("link", { name: "Regular" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(api.users).toHaveBeenCalledTimes(2);
   });
   it("updates the profile and signs out after a password change", async () => {
     const update = vi.spyOn(api, "updateProfile").mockResolvedValue({ ...admin, name: "Updated" });

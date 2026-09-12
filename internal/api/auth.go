@@ -233,6 +233,14 @@ func (h *authHandler) users(w http.ResponseWriter, r *http.Request) {
 	}
 	respondJSON(w, 200, result)
 }
+func (h *authHandler) user(w http.ResponseWriter, r *http.Request) {
+	user, err := h.service.GetUser(r.Context(), current(r).Session.Hash, chi.URLParam(r, "id"))
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	respondJSON(w, 200, user)
+}
 func (h *authHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		identity.UserInput

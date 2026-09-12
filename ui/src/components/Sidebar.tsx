@@ -77,7 +77,7 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
             key={item.to}
             to={item.to}
             title={collapsed ? item.label : undefined}
-            className={itemCls(pathname === item.to)}
+            className={itemCls(pathname === item.to || (item.to === "/users" && pathname.startsWith("/users/")))}
           >
             <span className="inline-flex shrink-0">{item.icon}</span>
             <span className={labelCls}>{item.label}</span>

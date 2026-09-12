@@ -20,7 +20,7 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
   const { notifyError } = useToast();
   const [busy, setBusy] = useState(false);
   const signOut = async () => { if (busy) return; setBusy(true); try { await logout(); } catch (error) { notifyError(error); } finally { setBusy(false); } };
-  const title = TITLES[pathname] ?? "Not found";
+  const title = TITLES[pathname] ?? (pathname === "/users/new" ? "Add user" : pathname === "/users/" ? "Users" : /^\/users\/[^/]+$/.test(pathname) ? "User detail" : "Not found");
   return (
     <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-md md:px-6">
       <button className="icon-btn" onClick={onMenu} aria-label="Toggle sidebar">

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -264,4 +265,42 @@ func TestDevelopmentOriginAndProductionRejection(t *testing.T) {
 	res = httptest.NewRecorder()
 	rig.handler.ServeHTTP(res, request())
 	expectStatus(t, res, 403)
+}
+
+func TestUserDetailAuthorizationAndPagination(t *testing.T) {
+	rig := newAuthRig(t)
+	admin := rig.login(t, "admin@example.com", testPassword)
+	var target identity.Profile
+	for i := 0; i < 10; i++ {
+		res := rig.request(t, "POST", "/users", map[string]any{"name": "User", "email": fmt.Sprintf("user%d@example.com", i), "password": testPassword, "role": "user", "active": true}, admin)
+		expectStatus(t, res, 201)
+		target = profileFrom(t, res)
+	}
+	path := "/users/" + target.ID
+	res := rig.request(t, "GET", path, nil, admin)
+	expectStatus(t, res, 200)
+	if profileFrom(t, res).ID != target.ID || strings.Contains(strings.ToLower(res.Body.String()), "password") {
+		t.Fatal("invalid public profile response")
+	}
+	expectStatus(t, rig.request(t, "GET", path, nil, browserSession{}), 401)
+	user := rig.login(t, target.Email, testPassword)
+	expectStatus(t, rig.request(t, "GET", path, nil, user), 403)
+	expectStatus(t, rig.request(t, "GET", "/users/missing", nil, admin), 404)
+	first := rig.request(t, "GET", "/users", nil, admin)
+	expectStatus(t, first, 200)
+	var page identity.UserList
+	if err := json.Unmarshal(first.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.PageSize != 10 || len(page.Users) != 10 || page.Total != 11 {
+		t.Fatalf("unexpected first page: %+v", page)
+	}
+	second := rig.request(t, "GET", "/users?page=2", nil, admin)
+	expectStatus(t, second, 200)
+	if err := json.Unmarshal(second.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Page != 2 || len(page.Users) != 1 {
+		t.Fatalf("unexpected second page: %+v", page)
+	}
 }

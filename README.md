@@ -133,7 +133,7 @@ APP_UI_DEV_PROXY_URL=http://localhost:5173
 
 The UI uses React 19, TanStack Router, and Tailwind CSS 4. Theme tokens and shared styles live in `ui/src/styles/index.css`. The responsive sidebar, components, and light/dark/system modes are copied from Lizard, with this app’s own branding and browser preference keys.
 
-Routes: `/login`, `/` (dashboard), `/users` (admin only), `/profile`, `/components` (local style previews), `/settings`, and a catch-all 404 page. Application pages require login. `/dashboard` redirects to `/` for existing bookmarks. Direct navigation and refresh preserve the requested page.
+Routes: `/login`, `/` (dashboard), `/users`, `/users/new`, `/users/$userId` (admin only), `/profile`, `/components` (local style previews), `/settings`, and a catch-all 404 page. Application pages require login. `/dashboard` redirects to `/` for existing bookmarks. Direct navigation and refresh preserve the requested page.
 
 Set `ui.defaultTheme` to `auto`, `light`, or `dark` and `ui.repoURL` in `config.yaml`. `app.name` and `app.description` supply the visible branding. The server injects the default theme before the first paint; a saved browser preference takes priority.
 
@@ -150,7 +150,7 @@ There are no default accounts or passwords. Initialize the first administrator b
 
 The command prompts for a password without echoing it, then asks for confirmation. Passwords must contain 12–128 characters. For automation, pass `--password-stdin` and supply the password through stdin from a secret manager. Passwords are never accepted as command-line flags or printed. `--path` selects the project directory; `--data-dir` overrides the storage location on both `init` and `serve`.
 
-Initialization refuses to modify any existing user store, even with `--force`. The force flag only applies to generated configuration files. Use the Users screen for subsequent accounts; it supports search, role/status filters, pagination, creation, editing, role changes, disabling, and confirmed deletion. The last active administrator cannot be demoted, disabled, or deleted.
+Initialization refuses to modify any existing user store, even with `--force`. The force flag only applies to generated configuration files. Use the Users screen for subsequent accounts. Searches run only when submitted, with role/status filters and 10 results per page. Clicking a user opens a detail screen for editing attributes, role changes, disabling, and confirmed deletion. Returning to search preserves the filters, current page, and results without another request. Add user opens a separate creation screen; saving opens the new user’s detail, and Back returns to search. The last active administrator cannot be demoted, disabled, or deleted.
 
 ## Authentication and authorization
 
@@ -170,7 +170,7 @@ Initialization refuses to modify any existing user store, even with `--force`. T
 | `GET /api/profile`, `PUT /api/profile` | Own profile; only display name is editable |
 | `POST /api/profile/password` | Own account; current password required |
 | `GET /api/users`, `POST /api/users` | Admin |
-| `PUT /api/users/{id}`, `DELETE /api/users/{id}` | Admin |
+| `GET /api/users/{id}`, `PUT /api/users/{id}`, `DELETE /api/users/{id}` | Admin |
 
 The API returns JSON errors with 401 for unauthenticated requests, 403 for unauthorized actions, and 409 for duplicate emails or removal of the last active admin.
 

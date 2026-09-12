@@ -171,12 +171,27 @@ func (s *Service) Logout(ctx context.Context, hash string) error {
 	return s.store.Write(ctx, func(tx Tx) error { tx.DeleteSession(hash); return nil })
 }
 
+func (s *Service) GetUser(ctx context.Context, hash, id string) (Profile, error) {
+	var result Profile
+	err := s.store.Read(ctx, func(tx ReadTx) error {
+		if _, err := s.principal(tx, hash, true); err != nil {
+			return err
+		}
+		user, err := tx.User(id)
+		if err != nil {
+			return err
+		}
+		result = user.Profile
+		return nil
+	})
+	return result, err
+}
 func (s *Service) ListUsers(ctx context.Context, hash string, opts ListOptions) (UserList, error) {
 	if opts.Page < 1 {
 		opts.Page = 1
 	}
 	if opts.PageSize < 1 || opts.PageSize > 100 {
-		opts.PageSize = 20
+		opts.PageSize = 10
 	}
 	if opts.Role != "" && opts.Role != RoleAdmin && opts.Role != RoleUser {
 		return UserList{}, ValidationError("Invalid role filter.")

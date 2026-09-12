@@ -34,6 +34,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, servi
 			r.Use(auth.admin)
 			r.Get("/users", auth.users)
 			r.Post("/users", auth.createUser)
+			r.Get("/users/{id}", auth.user)
 			r.Put("/users/{id}", auth.updateUser)
 			r.Delete("/users/{id}", auth.deleteUser)
 		})
