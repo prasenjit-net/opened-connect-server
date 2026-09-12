@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -58,4 +59,22 @@ func TestSPARefreshPreservesRoute(t *testing.T) {
 			t.Fatalf("expected 404, got %d", res.Code)
 		}
 	})
+}
+
+func TestSPAInitialTheme(t *testing.T) {
+	files := fstest.MapFS{"index.html": {Data: []byte(`<meta name="default-theme" content="__DEFAULT_THEME__">`)}}
+	for _, theme := range []string{"light", "dark", "auto"} {
+		for _, route := range []string{"/", "/settings", "/nested/missing", "/index.html"} {
+			t.Run(theme+route, func(t *testing.T) {
+				res := httptest.NewRecorder()
+				newSPAHandler(files, theme).ServeHTTP(res, httptest.NewRequest(http.MethodGet, route, nil))
+				if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `content="`+theme+`"`) {
+					t.Fatalf("theme missing on SPA route: %d %s", res.Code, res.Body.String())
+				}
+				if res.Header().Get("Location") != "" {
+					t.Fatal("SPA route redirected")
+				}
+			})
+		}
+	}
 }

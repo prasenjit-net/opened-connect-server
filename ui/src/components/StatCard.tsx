@@ -1,22 +1,40 @@
-import type { LucideIcon } from 'lucide-react'
+import type { ReactElement, ReactNode } from "react";
+import Sparkline from "./Sparkline";
 
 interface StatCardProps {
-  label: string
-  value: string
-  description: string
-  icon: LucideIcon
-  tone: string
+  icon: ReactElement;
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  series?: number[];
+  max?: number;
+  color?: string;
 }
 
-export default function StatCard({ label, value, description, icon: Icon, tone }: StatCardProps) {
+export default function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+  series,
+  max,
+  color,
+}: StatCardProps) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className={`mb-3 inline-flex rounded-lg p-2 ${tone}`}>
-        <Icon className="h-5 w-5" />
+    <div className="card flex flex-col gap-1 pb-4">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex text-ink-faint">{icon}</span>
+        <span className="font-mono text-[0.7rem] font-medium tracking-wide text-ink-muted uppercase">
+          {label}
+        </span>
       </div>
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-slate-100">{value}</p>
-      <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">{description}</p>
+      <div className="text-[1.7rem] leading-tight font-semibold">{value}</div>
+      {sub ? <div className="font-mono text-[0.68rem] text-ink-faint">{sub}</div> : null}
+      {series && series.length > 1 ? (
+        <div className="mt-2">
+          <Sparkline data={series} color={color} height={36} max={max} />
+        </div>
+      ) : null}
     </div>
-  )
+  );
 }

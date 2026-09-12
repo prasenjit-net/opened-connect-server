@@ -55,6 +55,9 @@ jobs:
       - name: Lint frontend
         run: make lint-ui
 
+      - name: Test frontend
+        run: make test-ui
+
       - name: Test backend
         run: make test
 

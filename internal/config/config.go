@@ -39,7 +39,9 @@ type LoggingConfig struct {
 }
 
 type UIConfig struct {
-	DevProxyURL string `mapstructure:"devProxyURL" yaml:"devProxyURL"`
+	DefaultTheme string `mapstructure:"defaultTheme" yaml:"defaultTheme"`
+	RepoURL      string `mapstructure:"repoURL" yaml:"repoURL"`
+	DevProxyURL  string `mapstructure:"devProxyURL" yaml:"devProxyURL"`
 }
 
 func Default() Config {
@@ -63,7 +65,9 @@ func Default() Config {
 			Format: "text",
 		},
 		UI: UIConfig{
-			DevProxyURL: "http://localhost:5173",
+			DefaultTheme: "auto",
+			RepoURL:      "https://github.com/prasenjit-net/opened-connect-server",
+			DevProxyURL:  "http://localhost:5173",
 		},
 	}
 }
@@ -92,6 +96,8 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("logging.level", defaults.Logging.Level)
 	v.SetDefault("logging.format", defaults.Logging.Format)
 	v.SetDefault("ui.devProxyURL", defaults.UI.DevProxyURL)
+	v.SetDefault("ui.defaultTheme", defaults.UI.DefaultTheme)
+	v.SetDefault("ui.repoURL", defaults.UI.RepoURL)
 }
 
 func Load(v *viper.Viper) (Config, error) {
@@ -100,6 +106,9 @@ func Load(v *viper.Viper) (Config, error) {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
 
+	if cfg.UI.DefaultTheme != "auto" && cfg.UI.DefaultTheme != "light" && cfg.UI.DefaultTheme != "dark" {
+		return Config{}, fmt.Errorf("ui.defaultTheme must be auto, light, or dark")
+	}
 	return cfg, nil
 }
 
@@ -159,6 +168,8 @@ logging:
   format: text
 
 ui:
+  defaultTheme: auto
+  repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173
 `
 

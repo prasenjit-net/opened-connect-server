@@ -18,14 +18,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info) http.
 
 	h := NewHandler(cfg, build)
 	r.Get("/health", h.Health)
-	r.Get("/example", h.Example)
-	r.Get("/meta", h.Meta)
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		respondJSON(w, http.StatusOK, map[string]any{
-			"service": cfg.App.Name,
-			"message": "API ready",
-			"routes":  []string{"/api/health", "/api/example", "/api/meta"},
-		})
+	r.Get("/config", h.Config)
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		respondError(w, http.StatusNotFound, "NOT_FOUND", "API endpoint not found")
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		respondError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed")
 	})
 
 	logger.Debug("api router initialized")

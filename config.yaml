@@ -17,4 +17,6 @@ logging:
   format: text
 
 ui:
+  defaultTheme: auto
+  repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173

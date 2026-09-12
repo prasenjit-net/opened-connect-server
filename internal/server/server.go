@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -59,7 +60,7 @@ func (a *App) Handler() http.Handler {
 		return r
 	}
 
-	spa := newSPAHandler(distFS)
+	spa := newSPAHandler(distFS, a.cfg.UI.DefaultTheme)
 	r.Handle("/*", spa)
 
 	return r
@@ -85,14 +86,16 @@ func newDevProxy(rawURL string, logger *slog.Logger) http.Handler {
 }
 
 type spaHandler struct {
-	fsys       fs.FS
-	fileServer http.Handler
+	fsys         fs.FS
+	fileServer   http.Handler
+	defaultTheme string
 }
 
-func newSPAHandler(fsys fs.FS) http.Handler {
+func newSPAHandler(fsys fs.FS, defaultTheme string) http.Handler {
 	return &spaHandler{
-		fsys:       fsys,
-		fileServer: http.FileServer(http.FS(fsys)),
+		fsys:         fsys,
+		fileServer:   http.FileServer(http.FS(fsys)),
+		defaultTheme: defaultTheme,
 	}
 }
 
@@ -102,16 +105,24 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cleanPath = "index.html"
 	}
 
-	if fileExists(h.fsys, cleanPath) {
+	if cleanPath != "index.html" && fileExists(h.fsys, cleanPath) {
 		h.fileServer.ServeHTTP(w, r)
 		return
 	}
 
-	indexReq := r.Clone(r.Context())
-	// FileServer redirects /index.html to ./, which loses the SPA route.
-	// Serving the root loads index.html without redirecting the browser.
-	indexReq.URL.Path = "/"
-	h.fileServer.ServeHTTP(w, indexReq)
+	index, err := fs.ReadFile(h.fsys, "index.html")
+	if err != nil {
+		http.Error(w, "embedded UI missing; run `make build-ui` before building the binary", http.StatusServiceUnavailable)
+		return
+	}
+	// Render the initial theme before React loads, preserving the requested URL.
+	theme := h.defaultTheme
+	if theme != "light" && theme != "dark" {
+		theme = "auto"
+	}
+	index = bytes.ReplaceAll(index, []byte("__DEFAULT_THEME__"), []byte(theme))
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
 }
 
 func fileExists(fsys fs.FS, name string) bool {

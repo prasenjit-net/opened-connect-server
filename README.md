@@ -1,6 +1,6 @@
 # OpenID Connect Server
 
-OpenID Connect Server is a Go application with an embedded React administration console. The console displays server health, configuration, build information, and API examples.
+OpenID Connect Server is a Go application with an embedded React administration console. The console provides an empty dashboard, appearance settings, a component showcase, and a 404 page using the Grove theme from Lizard.
 
 Repository: https://github.com/prasenjit-net/opened-connect-server
 
@@ -8,7 +8,7 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 
 - `serve`, `init`, and `version` CLI commands
 - `chi`-based API routing under `/api`
-- Example endpoints at `/api/health` and `/api/example`
+- UI configuration at `/api/config` and a health check at `/api/health`
 - Embedded React build via Go `embed`
 - Development mode with Vite proxy support
 - Structured logging with `slog`
@@ -80,6 +80,7 @@ make dev-all    # backend + Vite together
 make build      # build UI, embed it, compile one binary
 make run        # build and run the production binary
 make test       # run Go tests
+make test-ui    # run frontend tests
 make lint       # go vet
 make lint-ui    # eslint for the React app
 ```
@@ -119,5 +120,15 @@ APP_UI_DEV_PROXY_URL=http://localhost:5173
 - `cmd/app/serve.go`
 - `internal/config/config.go`
 - `internal/server/server.go`
-- `ui/src/App.tsx`
+- `ui/src/router.tsx`
 - `ui/src/components/Layout.tsx`
+
+## UI theme
+
+The UI uses React 19, TanStack Router, and Tailwind CSS 4. Theme tokens and shared styles live in `ui/src/styles/index.css`. The responsive sidebar, components, and light/dark/system modes are copied from Lizard, with this app’s own branding and browser preference keys.
+
+Routes: `/` (empty dashboard), `/components` (local style previews), `/settings`, and a catch-all 404 page. `/dashboard` redirects to `/` for existing bookmarks. Direct navigation and refresh preserve the requested page.
+
+Set `ui.defaultTheme` to `auto`, `light`, or `dark` and `ui.repoURL` in `config.yaml`. `app.name` and `app.description` supply the visible branding. The server injects the default theme before the first paint; a saved browser preference takes priority.
+
+The only application APIs are `GET /api/config` and `GET /api/health`; unknown API routes return a JSON 404. The old `/api/example` and `/api/meta` endpoints have been removed. There are no certificate, ACME, task, metrics, or WebSocket services. See `THIRD_PARTY_NOTICES.md` for theme attribution.

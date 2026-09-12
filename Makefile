@@ -15,7 +15,7 @@ LD_FLAGS := -s -w \
 	-X github.com/prasenjit-net/opened-connect-server/internal/version.Commit=$(COMMIT) \
 	-X github.com/prasenjit-net/opened-connect-server/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: all build build-ui build-go run dev dev-ui dev-all test lint lint-ui fmt install-deps clean init help
+.PHONY: all build build-ui build-go run dev dev-ui dev-all test test-ui lint lint-ui fmt install-deps clean init help
 
 all: build
 
@@ -58,6 +58,9 @@ lint:
 	@echo "> Running go vet…"
 	$(GO) vet $(GO_PACKAGES)
 
+test-ui:
+	cd $(UI_DIR) && npm test
+
 lint-ui:
 	@echo "> Running UI lint…"
 	cd $(UI_DIR) && npm run lint
@@ -90,6 +93,7 @@ help:
 	@echo "  dev-ui      Run the Vite development server"
 	@echo "  dev-all     Run backend and frontend together"
 	@echo "  test        Run Go tests"
+	@echo "  test-ui     Run frontend tests"
 	@echo "  lint        Run go vet"
 	@echo "  lint-ui     Run frontend lint"
 	@echo "  install-deps Install Go and UI dependencies"

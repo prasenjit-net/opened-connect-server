@@ -10,76 +10,48 @@ import (
 )
 
 type Handler struct {
-	config  config.Config
-	version version.Info
+	config    config.Config
+	version   version.Info
+	startedAt time.Time
 }
 
-type healthResponse struct {
-	Status    string       `json:"status"`
-	Service   string       `json:"service"`
-	Env       string       `json:"env"`
-	Time      time.Time    `json:"time"`
-	Version   version.Info `json:"version"`
-	Documents []string     `json:"documents"`
+type uiConfigResponse struct {
+	AppName      string `json:"appName"`
+	Tagline      string `json:"tagline"`
+	DefaultTheme string `json:"defaultTheme"`
+	RepoURL      string `json:"repoUrl"`
 }
 
-type exampleResponse struct {
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary"`
-	Features    []string `json:"features"`
-	Quickstart  []string `json:"quickstart"`
-	Repository  string   `json:"repository"`
-	FrontendDir string   `json:"frontendDir"`
-}
-
-type metaResponse struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Environment string       `json:"environment"`
-	URL         string       `json:"url"`
-	UIProxy     string       `json:"uiProxy"`
-	Version     version.Info `json:"version"`
+type configResponse struct {
+	UI          uiConfigResponse `json:"ui"`
+	Version     string           `json:"version"`
+	StartedAtMS int64            `json:"startedAtMs"`
 }
 
 func NewHandler(cfg config.Config, build version.Info) *Handler {
-	return &Handler{config: cfg, version: build}
+	return &Handler{config: cfg, version: build, startedAt: time.Now()}
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, healthResponse{
-		Status:  "ok",
-		Service: h.config.App.Name,
-		Env:     h.config.App.Env,
-		Time:    time.Now().UTC(),
-		Version: h.version,
-		Documents: []string{
-			"README.md",
-			"config.yaml",
-			"ui/src/pages",
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": h.version.Version})
+}
+
+func (h *Handler) Config(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	respondJSON(w, http.StatusOK, configResponse{
+		UI: uiConfigResponse{
+			AppName:      h.config.App.Name,
+			Tagline:      h.config.App.Description,
+			DefaultTheme: h.config.UI.DefaultTheme,
+			RepoURL:      h.config.UI.RepoURL,
 		},
+		Version:     h.version.Version,
+		StartedAtMS: h.startedAt.UnixMilli(),
 	})
 }
 
-func (h *Handler) Example(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, exampleResponse{
-		Title:       "OpenID Connect Server",
-		Summary:     "Embed a Vite-generated React application directly into the Go binary with one production build.",
-		Features:    []string{"Cobra CLI commands", "Viper config + .env support", "Chi API router", "Embedded SPA serving", "React Query + Tailwind UI"},
-		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/opened-connect-server serve"},
-		Repository:  "https://github.com/prasenjit-net/opened-connect-server",
-		FrontendDir: "ui",
-	})
-}
-
-func (h *Handler) Meta(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, metaResponse{
-		Name:        h.config.App.Name,
-		Description: h.config.App.Description,
-		Environment: h.config.App.Env,
-		URL:         h.config.App.URL,
-		UIProxy:     h.config.UI.DevProxyURL,
-		Version:     h.version,
-	})
+func respondError(w http.ResponseWriter, status int, code, message string) {
+	respondJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {

@@ -3,9 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="OpenID Connect Server administration console" />
-    <title>OpenID Connect Server</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="description" content="OpenID Connect Server administration console" />
+    <!-- The server rewrites this content= value to [ui].default_theme from
+         config.yaml when it serves this file (see internal/server/server.go).
+         In `npm run dev` it stays literally "__DEFAULT_THEME__", which the
+         script below treats the same as "auto". -->
+    <meta name="default-theme" content="__DEFAULT_THEME__" />
+    <title>OpenID Connect Server</title>
+    <script>
+      // Apply the real default theme before first paint, so there's no
+      // flash of the wrong mode while the SPA boots and fetches
+      // /api/config. The React ThemeProvider takes over after hydration.
+      (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("opened-connect-server-theme");
+        } catch (e) {
+          /* storage unavailable */
+        }
+        if (!mode) {
+          var meta = document.querySelector('meta[name="default-theme"]');
+          var configured = meta && meta.content;
+          mode = configured === "light" || configured === "dark" ? configured : "auto";
+        }
+        var dark =
+          mode === "dark" ||
+          (mode !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

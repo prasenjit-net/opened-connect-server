@@ -1,22 +1,27 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
-import Layout from './components/Layout'
-import DashboardPage from './pages/DashboardPage'
-import ExamplesPage from './pages/ExamplesPage'
-import SettingsPage from './pages/SettingsPage'
-import NotFoundPage from './pages/NotFoundPage'
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { RouterProvider } from "@tanstack/react-router";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { ConfigProvider } from "./context/ConfigContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { ToastProvider } from "./context/ToastContext";
+import { queryClient } from "./lib/queryClient";
+import { router } from "./router";
 
-function App() {
+// Configuration supplies the server default before the theme and routes render.
+export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="examples" element={<ExamplesPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-    </Routes>
-  )
+    <ErrorBoundary>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <ConfigProvider>
+            <ThemeProvider>
+              <RouterProvider router={router} />
+            </ThemeProvider>
+          </ConfigProvider>
+          {import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+        </QueryClientProvider>
+      </ToastProvider>
+    </ErrorBoundary>
+  );
 }
-
-export default App
