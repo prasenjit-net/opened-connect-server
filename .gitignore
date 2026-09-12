@@ -1,0 +1,33 @@
+# Build output
+/build/
+coverage.out
+coverage.html
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Config overrides (keep config.yaml as the example default)
+config.local.yaml
+config.*.local.yaml
+
+# Frontend build output (keep .gitkeep so go:embed always has a valid target)
+ui/dist/*
+!ui/dist/.gitkeep
+ui/node_modules/
+
+# Go tool cache
+vendor/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data
+/data/

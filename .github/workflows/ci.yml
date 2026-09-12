@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: ui/node_modules
+          key: node-modules-${{ hashFiles('ui/package-lock.json') }}
+          restore-keys: node-modules-
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      - name: Install UI dependencies
+        run: npm ci --prefix ui
+
+      # Build UI first — go:embed requires ui/dist to be populated before
+      # go vet / go test compile the package.
+      - name: Build UI
+        run: make build-ui
+
+      - name: Lint backend
+        run: make lint
+
+      - name: Lint frontend
+        run: make lint-ui
+
+      - name: Test backend
+        run: make test
+
+      # UI is already built; only compile the Go binary here.
+      - name: Build Go binary
+        run: make build-go

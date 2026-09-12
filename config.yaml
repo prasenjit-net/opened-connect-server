@@ -1,0 +1,20 @@
+app:
+  name: Go App Template
+  env: development
+  url: http://localhost:8080
+  description: Full-stack starter with Go at the repo root and an embedded React UI.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  readTimeout: 15s
+  writeTimeout: 15s
+  idleTimeout: 60s
+  shutdownTimeout: 10s
+
+logging:
+  level: info
+  format: text
+
+ui:
+  devProxyURL: http://localhost:5173
