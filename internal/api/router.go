@@ -20,30 +20,38 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, servi
 	h := NewHandler(cfg, build)
 	auth := &authHandler{service: service, cfg: cfg, logger: logger, limiter: &loginLimiter{entries: map[string]limitEntry{}}, slots: make(chan struct{}, 4)}
 	r.Use(auth.safety)
-	r.Get("/health", h.Health)
-	r.Get("/config", h.Config)
-	r.Post("/auth/login", auth.login)
-	r.Group(func(r chi.Router) {
+	// Each API group owns its authorization boundary.
+	r.Route("/public", func(r chi.Router) {
+		r.Get("/health", h.Health)
+		r.Get("/config", h.Config)
+	})
+	r.Route("/auth", func(r chi.Router) {
+		r.Post("/login", auth.login)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.authenticated)
+			r.Get("/session", auth.session)
+			r.Post("/logout", auth.logout)
+		})
+	})
+	r.Route("/user", func(r chi.Router) {
 		r.Use(auth.authenticated)
-		r.Get("/auth/session", auth.session)
-		r.Post("/auth/logout", auth.logout)
 		r.Get("/profile", auth.profile)
 		r.Put("/profile", auth.updateProfile)
 		r.Post("/profile/password", auth.password)
-		r.Group(func(r chi.Router) {
-			r.Use(auth.admin)
-			r.Get("/clients", auth.clients)
-			r.Post("/clients", auth.saveClient)
-			r.Get("/clients/{id}", auth.client)
-			r.Put("/clients/{id}", auth.saveClient)
-			r.Delete("/clients/{id}", auth.deleteClient)
-			r.Post("/clients/{id}/secret", auth.rotateClientSecret)
-			r.Get("/users", auth.users)
-			r.Post("/users", auth.createUser)
-			r.Get("/users/{id}", auth.user)
-			r.Put("/users/{id}", auth.updateUser)
-			r.Delete("/users/{id}", auth.deleteUser)
-		})
+	})
+	r.Route("/admin", func(r chi.Router) {
+		r.Use(auth.authenticated, auth.admin)
+		r.Get("/clients", auth.clients)
+		r.Post("/clients", auth.saveClient)
+		r.Get("/clients/{id}", auth.client)
+		r.Put("/clients/{id}", auth.saveClient)
+		r.Delete("/clients/{id}", auth.deleteClient)
+		r.Post("/clients/{id}/secret", auth.rotateClientSecret)
+		r.Get("/users", auth.users)
+		r.Post("/users", auth.createUser)
+		r.Get("/users/{id}", auth.user)
+		r.Put("/users/{id}", auth.updateUser)
+		r.Delete("/users/{id}", auth.deleteUser)
 	})
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "NOT_FOUND", "API endpoint not found")

@@ -17,7 +17,7 @@ import (
 
 func TestHealthEndpoint(t *testing.T) {
 	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t))
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/public/health", nil)
 	res := httptest.NewRecorder()
 
 	router.ServeHTTP(res, req)
@@ -37,7 +37,7 @@ func TestConfigEndpoint(t *testing.T) {
 	before := time.Now().UnixMilli()
 	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Info{Version: "1.2.3"}, testIdentity(t))
 	res := httptest.NewRecorder()
-	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/config", nil))
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/public/config", nil))
 	var payload configResponse
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)

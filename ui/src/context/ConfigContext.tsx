@@ -1,4 +1,4 @@
-// Fetches /api/config via TanStack Query and gates the app on it:
+// Fetches /api/public/config via TanStack Query and gates the app on it:
 // children render only after the server config has arrived, so every
 // consumer can read it synchronously. Shows a splash while loading and a
 // retry screen when the backend is unreachable.

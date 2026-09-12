@@ -89,7 +89,7 @@ export default function SettingsPage() {
           </ConfigRow>
         </dl>
         <p className="mt-3 text-[0.8rem] leading-relaxed text-ink-faint">
-          Served by <code>GET /api/config</code>. Edit <code>config.yaml</code> or pass CLI
+          Served by <code>GET /api/public/config</code>. Edit <code>config.yaml</code> or pass CLI
           flags (e.g. <code>--port 9000</code>) to change these — no UI rebuild needed.
         </p>
       </section>

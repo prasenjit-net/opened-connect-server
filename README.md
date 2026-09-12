@@ -11,7 +11,7 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 - User/admin roles enforced in the API and UI
 - Argon2id passwords and expiring, revocable cookie sessions
 - Local identity storage behind a transactional interface
-- UI configuration at `/api/config` and a health check at `/api/health`
+- UI configuration at `/api/public/config` and a health check at `/api/public/health`
 - Embedded React build via Go `embed`
 - Development mode with Vite proxy support
 - Structured logging with `slog`
@@ -75,7 +75,7 @@ Open:
 
 - UI: `http://localhost:8080`
 - Login: `http://localhost:8080/login`
-- Health: `http://localhost:8080/api/health`
+- Health: `http://localhost:8080/api/public/health`
 
 ### Common Commands
 
@@ -164,13 +164,13 @@ Initialization refuses to modify any existing user store, even with `--force`. T
 
 | Endpoint | Access |
 | --- | --- |
-| `GET /api/config`, `GET /api/health`, `GET /livez` | Public bootstrap/health information |
+| `GET /api/public/config`, `GET /api/public/health`, `GET /livez` | Public bootstrap/health information |
 | `POST /api/auth/login` | Public; JSON and same-origin checks; throttled |
 | `GET /api/auth/session`, `POST /api/auth/logout` | Signed-in user |
-| `GET /api/profile`, `PUT /api/profile` | Own profile; editable claims and custom attributes |
-| `POST /api/profile/password` | Own account; current password required |
-| `GET /api/users`, `POST /api/users` | Admin |
-| `GET /api/users/{id}`, `PUT /api/users/{id}`, `DELETE /api/users/{id}` | Admin |
+| `GET /api/user/profile`, `PUT /api/user/profile` | Own profile; editable claims and custom attributes |
+| `POST /api/user/profile/password` | Own account; current password required |
+| `GET /api/admin/users`, `POST /api/admin/users` | Admin |
+| `GET /api/admin/users/{id}`, `PUT /api/admin/users/{id}`, `DELETE /api/admin/users/{id}` | Admin |
 
 The API returns JSON errors with 401 for unauthenticated requests, 403 for unauthorized actions, and 409 for duplicate emails or removal of the last active admin.
 
@@ -205,7 +205,7 @@ Profiles support the [OpenID Connect standard claims](https://openid.net/specs/o
 
 Custom attributes are a separate `custom_attributes` JSON object supporting scalar, array, and object values (up to 50 names within the 16 KB request limit). They never grant application permissions or override standard claims. Supplying editable claims replaces that set; omitting them preserves existing values. Administrators manage email/phone verification flags. Self-service changes to email or phone clear the corresponding verification flag.
 
-Regular users access only their own profile through `/api/profile`; the server derives the target from the session and rejects identity, role, status, and verification fields. All `/api/users` endpoints require admin authorization. Admins retain all self-service capabilities. The Users navigation entry and management routes are hidden/guarded for regular users.
+Regular users access only their own profile through `/api/user/profile`; the server derives the target from the session and rejects identity, role, status, and verification fields. All `/api/admin/users` endpoints require admin authorization. Admins retain all self-service capabilities. The Users navigation entry and management routes are hidden/guarded for regular users.
 
 ## Client management
 
@@ -213,12 +213,12 @@ Administrators manage OpenID Connect clients at `/clients`, `/clients/new`, and 
 
 | Endpoint | Operation |
 | --- | --- |
-| `GET /api/clients?q=portal&page=1` | Search; fixed page size 10 |
-| `POST /api/clients` | Create a client |
-| `GET /api/clients/{id}` | Read client metadata |
-| `PUT /api/clients/{id}` | Replace editable metadata |
-| `DELETE /api/clients/{id}` | Delete a client |
-| `POST /api/clients/{id}/secret` | Rotate its secret; send `{}` |
+| `GET /api/admin/clients?q=portal&page=1` | Search; fixed page size 10 |
+| `POST /api/admin/clients` | Create a client |
+| `GET /api/admin/clients/{id}` | Read client metadata |
+| `PUT /api/admin/clients/{id}` | Replace editable metadata |
+| `DELETE /api/admin/clients/{id}` | Delete a client |
+| `POST /api/admin/clients/{id}/secret` | Rotate its secret; send `{}` |
 
 All endpoints require an admin session; mutations also require the session CSRF token. Metadata uses the top-level names from [OpenID Connect Dynamic Client Registration 1.0, section 2](https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata), including language-tagged display fields. The editor exposes application/redirect settings, response/grant types, contacts and display URLs, authentication method, subject settings, public JWKS, signing/encryption preferences, authentication-age defaults, ACR values, and request/login URIs. Unknown and server-managed input fields are rejected. PUT replaces metadata and reapplies specification defaults for omitted defaulted fields.
 
@@ -227,3 +227,5 @@ This is the administrative client registry. OAuth authorization/token processing
 The server generates immutable `client_id` and `client_id_issued_at`. A `client_secret`, when required by the authentication or symmetric cryptographic metadata, is returned only on creation, first issuance after a metadata change, or rotation. Read/search responses never include it. Secrets have `client_secret_expires_at: 0` (no automatic expiry). The UI keeps a newly issued secret only in memory until dismissal or leaving its detail page, outside the query cache and browser storage. Rotation immediately replaces the stored secret.
 
 Clients share the transactional `identity.Store` interface and local `data/identity.json` store. Existing identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data. The encryption key is stored separately in `data/client-secrets.key` (mode 0600); back up both files together. Missing/invalid keys fail closed. Database adapters implement the client transaction methods and their own secret protection.
+
+API routes are grouped by access: `/api/admin/*` requires an administrator, `/api/user/*` provides self-service access to both users and admins, `/api/auth/*` handles authentication (only login is public), and `/api/public/*` supplies public bootstrap/health data. The infrastructure liveness probe remains `/livez`. Former ungrouped API paths return 404; API consumers must use the grouped paths. Browser page URLs are unchanged.
