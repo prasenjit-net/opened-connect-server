@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current())
+	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t))
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	res := httptest.NewRecorder()
 
@@ -34,7 +35,7 @@ func TestConfigEndpoint(t *testing.T) {
 	cfg.App.Name = "Test Server"
 	cfg.UI.DefaultTheme = "dark"
 	before := time.Now().UnixMilli()
-	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Info{Version: "1.2.3"})
+	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Info{Version: "1.2.3"}, testIdentity(t))
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/config", nil))
 	var payload configResponse
@@ -53,7 +54,7 @@ func TestConfigEndpoint(t *testing.T) {
 }
 
 func TestRemovedAndUnknownEndpoints(t *testing.T) {
-	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current())
+	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t))
 	for _, path := range []string{"/", "/example", "/meta", "/certificates", "/tasks", "/missing"} {
 		t.Run(path, func(t *testing.T) {
 			res := httptest.NewRecorder()
@@ -63,4 +64,17 @@ func TestRemovedAndUnknownEndpoints(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testIdentity(t *testing.T) *identity.Service {
+	t.Helper()
+	store, err := identity.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewService(store, 8*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }

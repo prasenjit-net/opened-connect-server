@@ -28,3 +28,25 @@ func TestLoadFromViper(t *testing.T) {
 		t.Fatalf("expected duration decode, got %s", cfg.Server.ReadTimeout)
 	}
 }
+
+func TestProductionRequiresHTTPSAndSecureCookies(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("app.env", "production")
+	if _, err := Load(v); err == nil {
+		t.Fatal("production HTTP config accepted")
+	}
+	v.Set("app.url", "https://identity.example.com")
+	v.Set("auth.cookieSecure", false)
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Auth.CookieSecure {
+		t.Fatal("production cookie is not secure")
+	}
+	v.Set("auth.sessionTTL", "0s")
+	if _, err = Load(v); err == nil {
+		t.Fatal("invalid session lifetime accepted")
+	}
+}

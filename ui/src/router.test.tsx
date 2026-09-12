@@ -7,6 +7,9 @@ import { ToastProvider } from "./context/ToastContext";
 import NotFoundPage from "./pages/NotFound";
 import { router } from "./router";
 
+vi.mock("./context/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "user-1", name: "Test User", email: "test@example.com", role: "user", active: true }, loading: false, error: null, logout: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock("./context/ConfigContext", () => ({
   useConfig: () => ({
     ui: { appName: "OpenID Connect Server", tagline: "Administration", defaultTheme: "auto", repoUrl: null },
@@ -36,7 +39,7 @@ describe("theme routes", () => {
     renderRoute("/settings");
     expect(await screen.findByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["Dashboard", "Components", "Settings"]);
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["Dashboard", "Components", "My profile", "Settings"]);
   });
 
   it("shows 404 for removed domain routes and supports returning home", async () => {

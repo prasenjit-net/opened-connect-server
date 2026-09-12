@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider } from "@tanstack/react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { AuthProvider } from "./context/AuthContext";
 import { ConfigProvider } from "./context/ConfigContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ToastProvider } from "./context/ToastContext";
@@ -16,7 +17,7 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <ConfigProvider>
             <ThemeProvider>
-              <RouterProvider router={router} />
+              <AuthProvider><RouterProvider router={router} /></AuthProvider>
             </ThemeProvider>
           </ConfigProvider>
           {import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}

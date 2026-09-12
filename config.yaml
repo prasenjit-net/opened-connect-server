@@ -16,6 +16,13 @@ logging:
   level: info
   format: text
 
+storage:
+  dataDir: data
+
+auth:
+  sessionTTL: 8h
+  cookieSecure: false # development HTTP only
+
 ui:
   defaultTheme: auto
   repoURL: https://github.com/prasenjit-net/opened-connect-server

@@ -11,6 +11,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
 
 // Isolate shell navigation from the server configuration and theme providers.
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "user-1", name: "Test User", email: "test@example.com", role: "user", active: true }, loading: false, error: null, logout: vi.fn(), refresh: vi.fn() }),
+}));
+vi.mock("../context/ToastContext", () => ({ useToast: () => ({ notifyError: vi.fn() }) }));
 vi.mock("../context/ConfigContext", () => ({
   useConfig: () => ({
     ui: { appName: "Test App", tagline: "Testing", repoUrl: null },

@@ -1,18 +1,22 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import type { ReactElement } from "react";
+import { useAuth } from "../context/AuthContext";
 import { useConfig } from "../context/ConfigContext";
-import { IconDashboard, IconExternal, IconSliders, IconBolt, IconX } from "../icons";
+import { IconDashboard, IconExternal, IconSliders, IconBolt, IconX, IconUsers } from "../icons";
 import Logo from "./Logo";
 
 interface NavItem {
-  to: "/" | "/components" | "/settings";
+  to: "/" | "/components" | "/settings" | "/users" | "/profile";
+  admin?: boolean;
   label: string;
   icon: ReactElement;
 }
 
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: <IconDashboard size={20} /> },
+  { to: "/users", label: "Users", icon: <IconUsers size={20} />, admin: true },
   { to: "/components", label: "Components", icon: <IconBolt size={20} /> },
+  { to: "/profile", label: "My profile", icon: <IconUsers size={20} /> },
   { to: "/settings", label: "Settings", icon: <IconSliders size={20} /> },
 ];
 
@@ -26,6 +30,7 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
   const config = useConfig();
+  const { user } = useAuth();
   const { pathname } = useLocation();
 
   // On mobile the drawer always shows labels; `md:hidden` only kicks in
@@ -67,7 +72,7 @@ export default function Sidebar({ collapsed, open, onClose }: SidebarProps) {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2.5">
-        {NAV.map((item) => (
+        {NAV.filter((item) => !item.admin || user?.role === "admin").map((item) => (
           <Link
             key={item.to}
             to={item.to}

@@ -15,7 +15,9 @@ import (
 
 func TestSPARefreshPreservesRoute(t *testing.T) {
 	const index = "<!doctype html><html><body>App</body></html>"
-	app, err := New(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), Options{
+	cfg := config.Default()
+	cfg.Storage.DataDir = t.TempDir()
+	app, err := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), Options{
 		UIFS: fstest.MapFS{
 			"ui/dist/index.html":    {Data: []byte(index)},
 			"ui/dist/assets/app.js": {Data: []byte("console.log('app')")},

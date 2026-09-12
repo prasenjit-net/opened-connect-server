@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,10 +12,20 @@ import (
 )
 
 type Config struct {
+	Storage StorageConfig `mapstructure:"storage" yaml:"storage"`
+	Auth    AuthConfig    `mapstructure:"auth" yaml:"auth"`
 	App     AppConfig     `mapstructure:"app" yaml:"app"`
 	Server  ServerConfig  `mapstructure:"server" yaml:"server"`
 	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
 	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
+}
+
+type StorageConfig struct {
+	DataDir string `mapstructure:"dataDir" yaml:"dataDir"`
+}
+type AuthConfig struct {
+	SessionTTL   time.Duration `mapstructure:"sessionTTL" yaml:"sessionTTL"`
+	CookieSecure bool          `mapstructure:"cookieSecure" yaml:"cookieSecure"`
 }
 
 type AppConfig struct {
@@ -46,6 +57,8 @@ type UIConfig struct {
 
 func Default() Config {
 	return Config{
+		Storage: StorageConfig{DataDir: "data"},
+		Auth:    AuthConfig{SessionTTL: 8 * time.Hour},
 		App: AppConfig{
 			Name:        "OpenID Connect Server",
 			Env:         "development",
@@ -82,6 +95,9 @@ func (s ServerConfig) Address() string {
 
 func SetDefaults(v *viper.Viper) {
 	defaults := Default()
+	v.SetDefault("storage.dataDir", defaults.Storage.DataDir)
+	v.SetDefault("auth.sessionTTL", defaults.Auth.SessionTTL)
+	v.SetDefault("auth.cookieSecure", defaults.Auth.CookieSecure)
 
 	v.SetDefault("app.name", defaults.App.Name)
 	v.SetDefault("app.env", defaults.App.Env)
@@ -109,11 +125,30 @@ func Load(v *viper.Viper) (Config, error) {
 	if cfg.UI.DefaultTheme != "auto" && cfg.UI.DefaultTheme != "light" && cfg.UI.DefaultTheme != "dark" {
 		return Config{}, fmt.Errorf("ui.defaultTheme must be auto, light, or dark")
 	}
+	if cfg.Storage.DataDir == "" {
+		return Config{}, fmt.Errorf("storage.dataDir is required")
+	}
+	if cfg.Auth.SessionTTL < time.Minute || cfg.Auth.SessionTTL > 30*24*time.Hour {
+		return Config{}, fmt.Errorf("auth.sessionTTL must be between 1m and 720h")
+	}
+	publicURL, err := url.Parse(cfg.App.URL)
+	if err != nil || publicURL.Host == "" || (publicURL.Scheme != "http" && publicURL.Scheme != "https") {
+		return Config{}, fmt.Errorf("app.url must be an absolute HTTP or HTTPS URL")
+	}
+	if publicURL.Scheme == "https" {
+		cfg.Auth.CookieSecure = true
+	}
+	if cfg.App.Env != "development" && cfg.App.Env != "test" {
+		if publicURL.Scheme != "https" {
+			return Config{}, fmt.Errorf("app.url must use HTTPS outside development; terminate TLS at your reverse proxy")
+		}
+		cfg.Auth.CookieSecure = true
+	}
 	return cfg, nil
 }
 
 func InitProject(dir string, force bool) error {
-	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o700); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
@@ -167,13 +202,20 @@ logging:
   level: info
   format: text
 
+storage:
+  dataDir: data
+
+auth:
+  sessionTTL: 8h
+  cookieSecure: false # development HTTP only; HTTPS enables Secure automatically
+
 ui:
   defaultTheme: auto
   repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173
 `
 
-const DefaultEnvExample = `APP_ENV=development
+const DefaultEnvExample = `APP_APP_ENV=development
 APP_APP_NAME=OpenID Connect Server
 APP_SERVER_HOST=0.0.0.0
 APP_SERVER_PORT=8080

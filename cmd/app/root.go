@@ -16,6 +16,7 @@ import (
 
 var (
 	cfgFile string
+	dataDir string
 	uiFS    fs.FS
 	rootCmd = &cobra.Command{
 		Use:   "opened-connect-server",
@@ -36,6 +37,8 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default: ./config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Directory for local users and sessions (default: ./data)")
+	_ = viper.BindPFlag("storage.dataDir", rootCmd.PersistentFlags().Lookup("data-dir"))
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(versionCmd)

@@ -17,34 +17,57 @@ import (
 
 	"github.com/prasenjit-net/opened-connect-server/internal/api"
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
 type Options struct {
+	Store   identity.Store
 	DevMode bool
 	UIFS    fs.FS
 }
 
 type App struct {
-	cfg     config.Config
-	logger  *slog.Logger
-	build   version.Info
-	options Options
+	identity *identity.Service
+	cfg      config.Config
+	logger   *slog.Logger
+	build    version.Info
+	options  Options
 }
 
 func New(cfg config.Config, logger *slog.Logger, build version.Info, options Options) (*App, error) {
-	return &App{cfg: cfg, logger: logger, build: build, options: options}, nil
+	store := options.Store
+	if store == nil {
+		var err error
+		store, err = identity.NewFileStore(cfg.Storage.DataDir)
+		if err != nil {
+			return nil, err
+		}
+	}
+	auth, err := identity.NewService(store, cfg.Auth.SessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	return &App{cfg: cfg, logger: logger, build: build, options: options, identity: auth}, nil
 }
 
 func (a *App) Handler() http.Handler {
 	r := chi.NewRouter()
+	r.Use(securityHeaders)
+	if a.cfg.Auth.CookieSecure {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+				next.ServeHTTP(w, r)
+			})
+		})
+	}
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/livez"))
 	r.Use(requestLogger(a.logger))
 
-	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build))
+	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build, a.identity))
 
 	if a.options.DevMode && strings.TrimSpace(a.cfg.UI.DevProxyURL) != "" {
 		r.Handle("/*", newDevProxy(a.cfg.UI.DevProxyURL, a.logger))
@@ -156,4 +179,14 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			)
 		})
 	}
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
 }
