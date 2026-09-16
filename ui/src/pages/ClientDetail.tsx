@@ -48,6 +48,13 @@ export default function ClientDetailPage() {
     <p className="mt-2 break-all font-mono text-sm">Client ID: {query.data.client_id}</p>
     <p className="mt-2 text-xs text-ink-faint">Created {new Date(query.data.client_id_issued_at*1000).toLocaleString()} · Updated {new Date(query.data.updated_at*1000).toLocaleString()}</p>
    </section>
+   {!query.data.protocol_compatible && <section role="alert" className="card border border-warn">
+    <h2 className="font-semibold text-warn">Not usable with the OpenID Connect protocol endpoints yet</h2>
+    <p className="my-3 text-sm text-ink-muted">This client's registered settings request capabilities this provider does not implement yet. It will be rejected at /authorize and /token until its metadata is adjusted:</p>
+    <ul className="list-inside list-disc text-sm text-ink-muted">
+     {query.data.protocol_incompatibilities?.map((reason) => <li key={reason}>{reason}</li>)}
+    </ul>
+   </section>}
    {secret?.id === clientId && <section className="card border border-accent" aria-label="New client secret">
     <h2 className="font-semibold">Save your client secret</h2>
     <p className="my-3 text-sm text-ink-muted">Copy this secret now. It will not be shown again after you leave this page or dismiss it.</p>

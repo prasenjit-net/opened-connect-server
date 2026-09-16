@@ -1,4 +1,5 @@
 import type { ClientMetadata, ClientList, ClientResult, OIDCClient } from "./clients";
+import type { TransactionView } from "./oidc";
 export interface UiConfig {
   appName: string;
   tagline: string;
@@ -106,4 +107,6 @@ export const api = {
   deleteUser: (id: string) => request<void>(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
   config: () => request<ServerConfig>("/api/public/config"),
   health: () => request<{ status: string; version: string }>("/api/public/health"),
+  authorization: (id: string) => request<TransactionView>(`/api/user/authorization/${encodeURIComponent(id)}`),
+  decideAuthorization: (id: string, input: { approve: boolean; scopes: string[] }) => request<TransactionView>(`/api/user/authorization/${encodeURIComponent(id)}/decision`, { method: "POST", body: JSON.stringify(input) }),
 };

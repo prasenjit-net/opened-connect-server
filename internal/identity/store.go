@@ -18,6 +18,11 @@ var (
 	ErrInitialized  = errors.New("identity storage is already initialized")
 )
 
+// SessionCookieName is the browser session cookie's name, shared by the
+// management API (internal/api) and the OpenID Connect protocol endpoints
+// (internal/oidc) so both recognize the same signed-in browser session.
+const SessionCookieName = "ocs_session"
+
 type Role string
 
 const (
@@ -50,6 +55,12 @@ type Session struct {
 	UserID    string    `json:"userId"`
 	CSRF      string    `json:"csrf"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// AuthTime is when the credential check that created this session
+	// succeeded. It is the authentication-timestamp evidence OpenID Connect's
+	// auth_time claim and max_age freshness checks require. Sessions from
+	// before this field existed decode with a zero value, which is always
+	// treated as stale by freshness checks, forcing reauthentication.
+	AuthTime time.Time `json:"authTime,omitempty"`
 }
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
@@ -60,6 +71,10 @@ type ReadTx interface {
 	UserByEmail(email string) (User, error)
 	Users() []User
 	Session(hash string) (Session, error)
+	AuthzTransaction(id string) (AuthzTransaction, error)
+	AuthorizationCode(hash string) (AuthorizationCode, error)
+	AccessToken(hash string) (AccessToken, error)
+	Consent(userID, clientID string) (Consent, error)
 }
 
 type Tx interface {
@@ -72,6 +87,16 @@ type Tx interface {
 	DeleteSession(hash string)
 	DeleteUserSessions(userID string)
 	PruneSessions(now time.Time)
+	SaveAuthzTransaction(AuthzTransaction)
+	DeleteAuthzTransaction(id string)
+	SaveAuthorizationCode(AuthorizationCode)
+	SaveAccessToken(AccessToken)
+	RevokeAccessToken(hash string)
+	RevokeAccessTokensForUser(userID string)
+	RevokeAccessTokensForClient(clientID string)
+	RevokeAccessTokensForCode(codeHash string)
+	SaveConsent(Consent)
+	PruneOIDCState(now time.Time)
 }
 
 // Store callbacks execute atomically. Write must roll back all changes when the

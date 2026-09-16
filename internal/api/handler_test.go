@@ -16,7 +16,7 @@ import (
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t))
+	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t), nil)
 	req := httptest.NewRequest(http.MethodGet, "/public/health", nil)
 	res := httptest.NewRecorder()
 
@@ -35,7 +35,7 @@ func TestConfigEndpoint(t *testing.T) {
 	cfg.App.Name = "Test Server"
 	cfg.UI.DefaultTheme = "dark"
 	before := time.Now().UnixMilli()
-	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Info{Version: "1.2.3"}, testIdentity(t))
+	router := NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Info{Version: "1.2.3"}, testIdentity(t), nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/public/config", nil))
 	var payload configResponse
@@ -54,7 +54,7 @@ func TestConfigEndpoint(t *testing.T) {
 }
 
 func TestRemovedAndUnknownEndpoints(t *testing.T) {
-	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t))
+	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), testIdentity(t), nil)
 	for _, path := range []string{"/", "/example", "/meta", "/certificates", "/tasks", "/missing"} {
 		t.Run(path, func(t *testing.T) {
 			res := httptest.NewRecorder()

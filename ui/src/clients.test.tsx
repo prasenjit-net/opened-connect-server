@@ -13,7 +13,7 @@ import { router } from "./router";
 vi.mock("./context/ConfigContext", () => ({ useConfig: () => ({ ui: { appName: "Test App", defaultTheme: "auto" }, version: "1", startedAtMs: 0 }) }));
 vi.mock("./context/ThemeContext", () => ({ useTheme: () => ({ mode: "light", setMode: vi.fn() }) }));
 const admin: User = { id: "admin", name: "Admin", email: "admin@example.com", role: "admin", active: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-const client: OIDCClient = { client_id: "portal-id", client_name: "Portal", client_id_issued_at: 1234567890, updated_at: 1234567890, has_client_secret: true, client_secret_expires_at: 0, redirect_uris: ["https://app.example.com/cb"], application_type: "web", token_endpoint_auth_method: "client_secret_basic", response_types: ["code"], grant_types: ["authorization_code"] };
+const client: OIDCClient = { client_id: "portal-id", client_name: "Portal", client_id_issued_at: 1234567890, updated_at: 1234567890, has_client_secret: true, client_secret_expires_at: 0, redirect_uris: ["https://app.example.com/cb"], application_type: "web", token_endpoint_auth_method: "client_secret_basic", response_types: ["code"], grant_types: ["authorization_code"], protocol_compatible: true };
 function setup(path: string) {
  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
  const testRouter = createRouter({ routeTree: router.routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
@@ -57,6 +57,12 @@ describe("client management", () => {
   expect(screen.getByRole("link",{ name:"Updated Portal" })).toBeInTheDocument();
   expect(screen.getByRole("button",{ name:"Next" })).toBeDisabled();
   expect(api.clients).toHaveBeenCalledTimes(2);
+ });
+ it("shows a warning banner for a client that requests unsupported protocol capabilities", async () => {
+  vi.mocked(api.client).mockResolvedValue({ ...client, protocol_compatible: false, protocol_incompatibilities: ["pairwise subject identifiers are not yet implemented; this client requires public subjects"] });
+  setup("/clients/portal-id");
+  expect(await screen.findByRole("heading", { name: "Not usable with the OpenID Connect protocol endpoints yet" })).toBeInTheDocument();
+  expect(screen.getByText(/pairwise subject identifiers/)).toBeInTheDocument();
  });
  it("creates into detail, exposes the secret once without caching it, and browser Back returns to search", async () => {
   const create = vi.spyOn(api,"createClient").mockResolvedValue({ ...client,client_secret:"one-time-secret" });

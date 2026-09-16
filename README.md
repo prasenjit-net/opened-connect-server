@@ -6,11 +6,12 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 
 ## What You Get
 
-- `serve`, `init`, and `version` CLI commands
+- `serve`, `init`, `keys`, and `version` CLI commands
 - `chi`-based API routing under `/api`
 - User/admin roles enforced in the API and UI
 - Argon2id passwords and expiring, revocable cookie sessions
 - Local identity storage behind a transactional interface
+- An OpenID Connect provider (authorization code + PKCE, discovery, JWKS, UserInfo) alongside the management API
 - UI configuration at `/api/public/config` and a health check at `/api/public/health`
 - Embedded React build via Go `embed`
 - Development mode with Vite proxy support
@@ -30,6 +31,7 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 │   ├── config/
 │   ├── identity/
 │   ├── logging/
+│   ├── oidc/
 │   ├── server/
 │   └── version/
 ├── ui/
@@ -126,6 +128,7 @@ APP_UI_DEV_PROXY_URL=http://localhost:5173
 - `cmd/app/serve.go`
 - `internal/config/config.go`
 - `internal/server/server.go`
+- `internal/oidc/service.go`
 - `ui/src/router.tsx`
 - `ui/src/components/Layout.tsx`
 
@@ -229,3 +232,21 @@ The server generates immutable `client_id` and `client_id_issued_at`. A `client_
 Clients share the transactional `identity.Store` interface and local `data/identity.json` store. Existing identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data. The encryption key is stored separately in `data/client-secrets.key` (mode 0600); back up both files together. Missing/invalid keys fail closed. Database adapters implement the client transaction methods and their own secret protection.
 
 API routes are grouped by access: `/api/admin/*` requires an administrator, `/api/user/*` provides self-service access to both users and admins, `/api/auth/*` handles authentication (only login is public), and `/api/public/*` supplies public bootstrap/health data. The infrastructure liveness probe remains `/livez`. Former ungrouped API paths return 404; API consumers must use the grouped paths. Browser page URLs are unchanged.
+
+## OpenID Connect provider
+
+Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve an authorization-code OpenID Provider alongside the administration console. `oidc.issuer` defaults to `app.url`; it must be an absolute URL with no path, and HTTPS outside `development`/`test`. Protocol endpoints are mounted at the issuer root, ahead of the SPA/dev-proxy fallback, and never share the management API's JSON/CSRF middleware:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /.well-known/openid-configuration` | Discovery document; public, cacheable, CORS-open |
+| `GET /jwks` | Public signing keys only; never private material |
+| `GET`/`POST /authorize` | Authorization-code requests, PKCE S256 required |
+| `POST /token` | Code exchange; form-encoded, OAuth-shaped errors |
+| `GET`/`POST /userinfo` | Bearer-token claims, scope-gated |
+
+`./build/opened-connect-server init` provisions the RSA 3072-bit signing key and self-signed certificate under `data/signing-keys/` the first time OIDC is enabled, alongside the identity store; rerunning `init` (including `--force`) never replaces a valid existing key, and on an already-initialized install it now provisions only the missing signing material without touching users or passwords. `keys status` reports the active/retired keys and expiry (never private material); `keys rotate` generates and activates a new key while keeping the retired one published in `/jwks` for verification of still-unexpired tokens. `serve` fails closed at startup if OIDC is enabled and the signing material is missing, corrupt, mismatched, or expired — it never falls back to an ephemeral key.
+
+Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
+
+This initial delivery implements OpenID Connect Core's authorization-code profile plus Discovery: PKCE S256 (required, no downgrade), `client_secret_basic`/`client_secret_post`/`none` client authentication, opaque access tokens, RS256-signed ID tokens, and scope-gated UserInfo (`openid`, `profile`, `email`, `address`, `phone`). A registered client is usable with these endpoints only when its metadata is fully compatible; the client detail screen flags any client requesting capabilities this provider doesn't implement yet (pairwise subjects, `private_key_jwt`/`client_secret_jwt`, ID-token/UserInfo encryption, non-`RS256` signing, or response/grant types other than `code`/`authorization_code`) instead of silently downgrading it. Refresh tokens, `/revoke`, `/introspect`, RP-initiated logout, request objects, dynamic client registration, and WebFinger are not implemented in this delivery.

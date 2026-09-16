@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -18,6 +19,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server" yaml:"server"`
 	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
 	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
+	OIDC    OIDCConfig    `mapstructure:"oidc" yaml:"oidc"`
 }
 
 type StorageConfig struct {
@@ -55,6 +57,23 @@ type UIConfig struct {
 	DevProxyURL  string `mapstructure:"devProxyURL" yaml:"devProxyURL"`
 }
 
+// OIDCConfig configures the OpenID Connect provider surface (discovery,
+// JWKS, /authorize, /token, /userinfo). RefreshMaxTTL and
+// RefreshInactivityTTL are reserved for the future refresh-token milestone
+// and are not yet enforced.
+type OIDCConfig struct {
+	Enabled              bool          `mapstructure:"enabled" yaml:"enabled"`
+	Issuer               string        `mapstructure:"issuer" yaml:"issuer"`
+	TransactionTTL       time.Duration `mapstructure:"transactionTTL" yaml:"transactionTTL"`
+	CodeTTL              time.Duration `mapstructure:"codeTTL" yaml:"codeTTL"`
+	AccessTokenTTL       time.Duration `mapstructure:"accessTokenTTL" yaml:"accessTokenTTL"`
+	IDTokenTTL           time.Duration `mapstructure:"idTokenTTL" yaml:"idTokenTTL"`
+	RefreshMaxTTL        time.Duration `mapstructure:"refreshMaxTTL" yaml:"refreshMaxTTL"`
+	RefreshInactivityTTL time.Duration `mapstructure:"refreshInactivityTTL" yaml:"refreshInactivityTTL"`
+	KeyRotationInterval  time.Duration `mapstructure:"keyRotationInterval" yaml:"keyRotationInterval"`
+	KeyOverlapPeriod     time.Duration `mapstructure:"keyOverlapPeriod" yaml:"keyOverlapPeriod"`
+}
+
 func Default() Config {
 	return Config{
 		Storage: StorageConfig{DataDir: "data"},
@@ -81,6 +100,17 @@ func Default() Config {
 			DefaultTheme: "auto",
 			RepoURL:      "https://github.com/prasenjit-net/opened-connect-server",
 			DevProxyURL:  "http://localhost:5173",
+		},
+		OIDC: OIDCConfig{
+			Enabled:              false,
+			TransactionTTL:       10 * time.Minute,
+			CodeTTL:              60 * time.Second,
+			AccessTokenTTL:       10 * time.Minute,
+			IDTokenTTL:           5 * time.Minute,
+			RefreshMaxTTL:        30 * 24 * time.Hour,
+			RefreshInactivityTTL: 7 * 24 * time.Hour,
+			KeyRotationInterval:  90 * 24 * time.Hour,
+			KeyOverlapPeriod:     30 * 24 * time.Hour,
 		},
 	}
 }
@@ -114,6 +144,17 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("ui.devProxyURL", defaults.UI.DevProxyURL)
 	v.SetDefault("ui.defaultTheme", defaults.UI.DefaultTheme)
 	v.SetDefault("ui.repoURL", defaults.UI.RepoURL)
+
+	v.SetDefault("oidc.enabled", defaults.OIDC.Enabled)
+	v.SetDefault("oidc.issuer", defaults.OIDC.Issuer)
+	v.SetDefault("oidc.transactionTTL", defaults.OIDC.TransactionTTL)
+	v.SetDefault("oidc.codeTTL", defaults.OIDC.CodeTTL)
+	v.SetDefault("oidc.accessTokenTTL", defaults.OIDC.AccessTokenTTL)
+	v.SetDefault("oidc.idTokenTTL", defaults.OIDC.IDTokenTTL)
+	v.SetDefault("oidc.refreshMaxTTL", defaults.OIDC.RefreshMaxTTL)
+	v.SetDefault("oidc.refreshInactivityTTL", defaults.OIDC.RefreshInactivityTTL)
+	v.SetDefault("oidc.keyRotationInterval", defaults.OIDC.KeyRotationInterval)
+	v.SetDefault("oidc.keyOverlapPeriod", defaults.OIDC.KeyOverlapPeriod)
 }
 
 func Load(v *viper.Viper) (Config, error) {
@@ -143,6 +184,33 @@ func Load(v *viper.Viper) (Config, error) {
 			return Config{}, fmt.Errorf("app.url must use HTTPS outside development; terminate TLS at your reverse proxy")
 		}
 		cfg.Auth.CookieSecure = true
+	}
+	if cfg.OIDC.Enabled {
+		if strings.TrimSpace(cfg.OIDC.Issuer) == "" {
+			cfg.OIDC.Issuer = cfg.App.URL
+		}
+		// Never derive the issuer from a request's Host or forwarded headers;
+		// it is resolved once, here, from trusted configuration only.
+		issuer, err := url.Parse(cfg.OIDC.Issuer)
+		if err != nil || issuer.Host == "" || (issuer.Scheme != "http" && issuer.Scheme != "https") {
+			return Config{}, fmt.Errorf("oidc.issuer must be an absolute HTTP or HTTPS URL")
+		}
+		if issuer.Path != "" && issuer.Path != "/" {
+			return Config{}, fmt.Errorf("oidc.issuer must not have a path; path-prefixed issuers are not yet supported")
+		}
+		if cfg.App.Env != "development" && cfg.App.Env != "test" && issuer.Scheme != "https" {
+			return Config{}, fmt.Errorf("oidc.issuer must use HTTPS outside development")
+		}
+		for name, d := range map[string]time.Duration{
+			"oidc.transactionTTL": cfg.OIDC.TransactionTTL,
+			"oidc.codeTTL":        cfg.OIDC.CodeTTL,
+			"oidc.accessTokenTTL": cfg.OIDC.AccessTokenTTL,
+			"oidc.idTokenTTL":     cfg.OIDC.IDTokenTTL,
+		} {
+			if d <= 0 {
+				return Config{}, fmt.Errorf("%s must be positive", name)
+			}
+		}
 	}
 	return cfg, nil
 }
@@ -213,6 +281,16 @@ ui:
   defaultTheme: auto
   repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173
+
+# oidc:
+#   enabled: false
+#   issuer: https://identity.example.com # defaults to app.url when unset
+#   transactionTTL: 10m
+#   codeTTL: 60s
+#   accessTokenTTL: 10m
+#   idTokenTTL: 5m
+#   keyRotationInterval: 2160h # 90 days
+#   keyOverlapPeriod: 720h # 30 days
 `
 
 const DefaultEnvExample = `APP_APP_ENV=development

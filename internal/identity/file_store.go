@@ -12,12 +12,18 @@ import (
 	"github.com/gofrs/flock"
 )
 
+const currentVersion = 2
+
 type FileStore struct{ path string }
 type fileState struct {
-	ClientsMap map[string]ClientRecord `json:"clients,omitempty"`
-	Version    int                     `json:"version"`
-	UsersMap   map[string]User         `json:"users"`
-	Sessions   map[string]Session      `json:"sessions"`
+	ClientsMap         map[string]ClientRecord      `json:"clients,omitempty"`
+	Version            int                          `json:"version"`
+	UsersMap           map[string]User              `json:"users"`
+	Sessions           map[string]Session           `json:"sessions"`
+	AuthzTransactions  map[string]AuthzTransaction  `json:"authzTransactions,omitempty"`
+	AuthorizationCodes map[string]AuthorizationCode `json:"authorizationCodes,omitempty"`
+	AccessTokens       map[string]AccessToken       `json:"accessTokens,omitempty"`
+	Consents           map[string]Consent           `json:"consents,omitempty"`
 }
 
 func NewFileStore(dir string) (*FileStore, error) {
@@ -44,6 +50,18 @@ func (s *FileStore) Write(ctx context.Context, fn func(Tx) error) error {
 	return s.withState(ctx, true, func(tx *fileState) error { return fn(tx) })
 }
 
+func freshFileState() fileState {
+	return fileState{
+		Version:            currentVersion,
+		UsersMap:           map[string]User{},
+		Sessions:           map[string]Session{},
+		AuthzTransactions:  map[string]AuthzTransaction{},
+		AuthorizationCodes: map[string]AuthorizationCode{},
+		AccessTokens:       map[string]AccessToken{},
+		Consents:           map[string]Consent{},
+	}
+}
+
 func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileState) error) error {
 	// Use a fresh descriptor per transaction so independent instances (including
 	// the init CLI) cannot race one another or bypass a shared in-process lock.
@@ -57,7 +75,7 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 		return ctx.Err()
 	}
 	defer lock.Unlock()
-	state := fileState{Version: 1, UsersMap: map[string]User{}, Sessions: map[string]Session{}}
+	state := freshFileState()
 	content, err := os.ReadFile(s.path)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read identities: %w", err)
@@ -67,8 +85,30 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 		if err = json.Unmarshal(content, &state); err != nil {
 			return fmt.Errorf("invalid identity store: %w", err)
 		}
-		if state.Version != 1 || state.UsersMap == nil || state.Sessions == nil {
+		if state.UsersMap == nil || state.Sessions == nil {
 			return fmt.Errorf("unsupported or invalid identity store")
+		}
+		switch state.Version {
+		case 1:
+			// No data-shape change for the OIDC record maps added in version 2;
+			// they simply start empty below.
+			state.Version = 2
+		case currentVersion:
+			// current
+		default:
+			return fmt.Errorf("unsupported or invalid identity store")
+		}
+		if state.AuthzTransactions == nil {
+			state.AuthzTransactions = map[string]AuthzTransaction{}
+		}
+		if state.AuthorizationCodes == nil {
+			state.AuthorizationCodes = map[string]AuthorizationCode{}
+		}
+		if state.AccessTokens == nil {
+			state.AccessTokens = map[string]AccessToken{}
+		}
+		if state.Consents == nil {
+			state.Consents = map[string]Consent{}
 		}
 		if err = os.Chmod(s.path, 0600); err != nil {
 			return err
@@ -193,3 +233,114 @@ func (s *fileState) SaveClient(c ClientRecord) {
 	s.ClientsMap[c.ID] = cloneClient(c)
 }
 func (s *fileState) DeleteClient(id string) { delete(s.ClientsMap, id) }
+
+func (s *fileState) AuthzTransaction(id string) (AuthzTransaction, error) {
+	t, ok := s.AuthzTransactions[id]
+	if !ok {
+		return AuthzTransaction{}, ErrNotFound
+	}
+	return cloneAuthzTransaction(t), nil
+}
+func (s *fileState) SaveAuthzTransaction(t AuthzTransaction) {
+	if s.AuthzTransactions == nil {
+		s.AuthzTransactions = map[string]AuthzTransaction{}
+	}
+	s.AuthzTransactions[t.ID] = cloneAuthzTransaction(t)
+}
+func (s *fileState) DeleteAuthzTransaction(id string) { delete(s.AuthzTransactions, id) }
+
+func (s *fileState) AuthorizationCode(hash string) (AuthorizationCode, error) {
+	c, ok := s.AuthorizationCodes[hash]
+	if !ok {
+		return AuthorizationCode{}, ErrNotFound
+	}
+	return cloneAuthorizationCode(c), nil
+}
+func (s *fileState) SaveAuthorizationCode(c AuthorizationCode) {
+	if s.AuthorizationCodes == nil {
+		s.AuthorizationCodes = map[string]AuthorizationCode{}
+	}
+	s.AuthorizationCodes[c.Hash] = cloneAuthorizationCode(c)
+}
+
+func (s *fileState) AccessToken(hash string) (AccessToken, error) {
+	a, ok := s.AccessTokens[hash]
+	if !ok {
+		return AccessToken{}, ErrNotFound
+	}
+	return cloneAccessToken(a), nil
+}
+func (s *fileState) SaveAccessToken(a AccessToken) {
+	if s.AccessTokens == nil {
+		s.AccessTokens = map[string]AccessToken{}
+	}
+	s.AccessTokens[a.Hash] = cloneAccessToken(a)
+}
+func (s *fileState) RevokeAccessToken(hash string) {
+	if a, ok := s.AccessTokens[hash]; ok {
+		a.Revoked = true
+		s.AccessTokens[hash] = a
+	}
+}
+func (s *fileState) RevokeAccessTokensForUser(userID string) {
+	for hash, a := range s.AccessTokens {
+		if a.UserID == userID {
+			a.Revoked = true
+			s.AccessTokens[hash] = a
+		}
+	}
+}
+func (s *fileState) RevokeAccessTokensForClient(clientID string) {
+	for hash, a := range s.AccessTokens {
+		if a.ClientID == clientID {
+			a.Revoked = true
+			s.AccessTokens[hash] = a
+		}
+	}
+}
+func (s *fileState) RevokeAccessTokensForCode(codeHash string) {
+	for hash, a := range s.AccessTokens {
+		if a.CodeHash == codeHash {
+			a.Revoked = true
+			s.AccessTokens[hash] = a
+		}
+	}
+}
+
+func (s *fileState) Consent(userID, clientID string) (Consent, error) {
+	c, ok := s.Consents[consentID(userID, clientID)]
+	if !ok {
+		return Consent{}, ErrNotFound
+	}
+	return cloneConsent(c), nil
+}
+func (s *fileState) SaveConsent(c Consent) {
+	if s.Consents == nil {
+		s.Consents = map[string]Consent{}
+	}
+	if c.ID == "" {
+		c.ID = consentID(c.UserID, c.ClientID)
+	}
+	s.Consents[c.ID] = cloneConsent(c)
+}
+
+// PruneOIDCState deletes expired authorization transactions, expired
+// authorization codes, and expired access tokens. It mirrors PruneSessions
+// and is called opportunistically from write paths that touch this state.
+func (s *fileState) PruneOIDCState(now time.Time) {
+	for k, t := range s.AuthzTransactions {
+		if !t.ExpiresAt.After(now) {
+			delete(s.AuthzTransactions, k)
+		}
+	}
+	for k, c := range s.AuthorizationCodes {
+		if !c.ExpiresAt.After(now) {
+			delete(s.AuthorizationCodes, k)
+		}
+	}
+	for k, a := range s.AccessTokens {
+		if !a.ExpiresAt.After(now) {
+			delete(s.AccessTokens, k)
+		}
+	}
+}

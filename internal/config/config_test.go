@@ -50,3 +50,59 @@ func TestProductionRequiresHTTPSAndSecureCookies(t *testing.T) {
 		t.Fatal("invalid session lifetime accepted")
 	}
 }
+
+func TestOIDCIssuerDefaultsToAppURL(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oidc.enabled", true)
+	v.Set("app.url", "http://localhost:8080")
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OIDC.Issuer != "http://localhost:8080" {
+		t.Fatalf("expected issuer to default to app.url, got %q", cfg.OIDC.Issuer)
+	}
+}
+
+func TestOIDCRejectsPathPrefixedIssuer(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oidc.enabled", true)
+	v.Set("oidc.issuer", "https://identity.example.com/issuer")
+	if _, err := Load(v); err == nil {
+		t.Fatal("path-prefixed issuer accepted")
+	}
+}
+
+func TestOIDCRequiresHTTPSOutsideDevelopment(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("app.env", "production")
+	v.Set("app.url", "https://identity.example.com")
+	v.Set("oidc.enabled", true)
+	v.Set("oidc.issuer", "http://identity.example.com")
+	if _, err := Load(v); err == nil {
+		t.Fatal("HTTP issuer accepted outside development")
+	}
+}
+
+func TestOIDCRejectsNonPositiveTTLs(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oidc.enabled", true)
+	v.Set("oidc.codeTTL", "0s")
+	if _, err := Load(v); err == nil {
+		t.Fatal("non-positive code TTL accepted")
+	}
+}
+
+func TestOIDCDisabledSkipsIssuerValidation(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	// oidc.enabled defaults to false and oidc.issuer is empty; this must not
+	// fail even though an empty issuer would otherwise be invalid.
+	if _, err := Load(v); err != nil {
+		t.Fatalf("disabled OIDC config should not require an issuer: %v", err)
+	}
+}

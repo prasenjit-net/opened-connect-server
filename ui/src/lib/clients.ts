@@ -13,6 +13,8 @@ export interface OIDCClient extends ClientMetadata {
  updated_at: number;
  has_client_secret: boolean;
  client_secret_expires_at?: number;
+ protocol_compatible: boolean;
+ protocol_incompatibilities?: string[];
 }
 export interface ClientResult extends OIDCClient { client_secret?: string; }
 export interface ClientList { clients: OIDCClient[]; total: number; page: number; pageSize: number; }

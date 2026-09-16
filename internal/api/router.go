@@ -10,15 +10,16 @@ import (
 
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
 	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
-func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, service *identity.Service) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, service *identity.Service, oidcService *oidc.Service) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	h := NewHandler(cfg, build)
-	auth := &authHandler{service: service, cfg: cfg, logger: logger, limiter: &loginLimiter{entries: map[string]limitEntry{}}, slots: make(chan struct{}, 4)}
+	auth := &authHandler{service: service, oidc: oidcService, cfg: cfg, logger: logger, limiter: &loginLimiter{entries: map[string]limitEntry{}}, slots: make(chan struct{}, 4)}
 	r.Use(auth.safety)
 	// Each API group owns its authorization boundary.
 	r.Route("/public", func(r chi.Router) {
@@ -38,6 +39,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, servi
 		r.Get("/profile", auth.profile)
 		r.Put("/profile", auth.updateProfile)
 		r.Post("/profile/password", auth.password)
+		if oidcService != nil {
+			r.Get("/authorization/{id}", auth.authorizationStatus)
+			r.Post("/authorization/{id}/decision", auth.authorizationDecision)
+		}
 	})
 	r.Route("/admin", func(r chi.Router) {
 		r.Use(auth.authenticated, auth.admin)

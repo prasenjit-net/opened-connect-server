@@ -53,6 +53,11 @@ func clientView(c ClientRecord) ClientView {
 	if c.Secret != "" {
 		v["client_secret_expires_at"] = 0
 	}
+	compatible, reasons := auditMetadata(c.Metadata)
+	v["protocol_compatible"] = compatible
+	if !compatible {
+		v["protocol_incompatibilities"] = reasons
+	}
 	return v
 }
 func needsClientSecret(m ClientMetadata) bool {

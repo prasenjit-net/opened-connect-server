@@ -166,7 +166,8 @@ func (s *Service) Login(ctx context.Context, email, password, oldHash string) (L
 	if err != nil {
 		return LoginResult{}, err
 	}
-	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: s.now().UTC().Add(s.ttl)}}}
+	now := s.now().UTC()
+	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: now.Add(s.ttl), AuthTime: now}}}
 	err = s.store.Write(ctx, func(tx Tx) error {
 		current, err := tx.User(found.ID)
 		if err != nil || !current.Active || current.PasswordHash != found.PasswordHash || current.Email != found.Email {

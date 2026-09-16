@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
 )
 
 var (
@@ -74,34 +76,50 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if initialized {
-		return identity.ErrInitialized
-	}
-	email := strings.TrimSpace(adminEmail)
-	if email == "" {
-		if passwordStdin || !term.IsTerminal(int(os.Stdin.Fd())) {
-			return fmt.Errorf("--admin-email is required for noninteractive initialization")
+	if !initialized {
+		email := strings.TrimSpace(adminEmail)
+		if email == "" {
+			if passwordStdin || !term.IsTerminal(int(os.Stdin.Fd())) {
+				return fmt.Errorf("--admin-email is required for noninteractive initialization")
+			}
+			fmt.Fprint(cmd.ErrOrStderr(), "Administrator email: ")
+			email, err = bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+			if err != nil {
+				return err
+			}
+			email = strings.TrimSpace(email)
 		}
-		fmt.Fprint(cmd.ErrOrStderr(), "Administrator email: ")
-		email, err = bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+		password, err := readAdminPassword(cmd, passwordStdin)
 		if err != nil {
 			return err
 		}
-		email = strings.TrimSpace(email)
+		// Bootstrap is atomic and refuses an existing identity store, including with --force.
+		user, err := service.Bootstrap(cmd.Context(), adminName, email, password)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Initialized administrator %s in %s\n", user.Email, dir)
+	} else {
+		// Rerunning init (including with --force) never touches an existing
+		// identity store; it only provisions whatever is still missing below.
+		fmt.Fprintln(cmd.OutOrStdout(), "Identity store already initialized; skipping administrator setup.")
 	}
-	password, err := readAdminPassword(cmd, passwordStdin)
-	if err != nil {
-		return err
-	}
-	// Bootstrap is atomic and refuses an existing identity store, including with --force.
-	user, err := service.Bootstrap(cmd.Context(), adminName, email, password)
-	if err != nil {
-		return err
+	if cfg.OIDC.Enabled {
+		keys, err := oidc.NewFileKeyStore(filepath.Join(dir, "signing-keys"))
+		if err != nil {
+			return fmt.Errorf("prepare signing key directory: %w", err)
+		}
+		// Provision is idempotent and never wired to --force: it preserves any
+		// valid existing key rather than replacing it.
+		record, err := keys.Provision(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("provision signing key: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Signing key %s active (expires %s)\n", record.KID, record.NotAfter.Format(time.RFC3339))
 	}
 	if err = config.InitProject(abs, initForce); err != nil {
-		return fmt.Errorf("administrator created, but config initialization failed: %w", err)
+		return fmt.Errorf("initialization succeeded, but config initialization failed: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Initialized administrator %s in %s\n", user.Email, dir)
 	fmt.Fprintln(cmd.OutOrStdout(), "Start the server with: opened-connect-server serve")
 	return nil
 }
