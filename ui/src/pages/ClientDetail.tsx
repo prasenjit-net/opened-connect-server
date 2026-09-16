@@ -40,11 +40,11 @@ export default function ClientDetailPage() {
   } catch (error) { setError(error instanceof Error ? error.message : "Unable to complete the action."); }
   finally { setBusy(false); }
  };
- return <div className="flex max-w-[1000px] flex-col gap-4">
+ return <div className="flex w-full min-w-0 flex-col gap-4">
   <Link to="/clients" className="self-start text-sm text-accent hover:underline">← Back to client search</Link>
   {query.isPending ? <p role="status" className="card">Loading client…</p> : query.isError ? <section role="alert" className="card"><p className="mb-3 text-err">{query.error.message}</p><button className="btn btn-secondary" onClick={() => void query.refetch()}>Retry</button></section> : <>
    <section className="card">
-    <h2 className="text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
+    <h2 className="break-words text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
     <p className="mt-2 break-all font-mono text-sm">Client ID: {query.data.client_id}</p>
     <p className="mt-2 text-xs text-ink-faint">Created {new Date(query.data.client_id_issued_at*1000).toLocaleString()} · Updated {new Date(query.data.updated_at*1000).toLocaleString()}</p>
    </section>

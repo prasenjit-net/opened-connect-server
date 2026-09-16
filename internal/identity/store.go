@@ -65,6 +65,10 @@ type Session struct {
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	ListAuthzTransactions() []AuthzTransaction
+	ListAuthorizationCodes() []AuthorizationCode
+	ListAccessTokens() []AccessToken
+	ListConsents() []Consent
 	Client(id string) (ClientRecord, error)
 	Clients() []ClientRecord
 	User(id string) (User, error)

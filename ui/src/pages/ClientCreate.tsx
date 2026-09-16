@@ -18,7 +18,7 @@ export default function ClientCreatePage() {
   push("success","Client created.");
   await navigate({ to: "/clients/$clientId", params: { clientId: client.client_id }, replace: true });
  };
- return <div className="flex max-w-[1000px] flex-col gap-4">
+ return <div className="flex w-full min-w-0 flex-col gap-4">
   <Link to="/clients" className="self-start text-sm text-accent hover:underline">← Back to client search</Link>
   <ClientEditor onSave={save} onCancel={() => { void navigate({ to: "/clients" }); }} />
  </div>;

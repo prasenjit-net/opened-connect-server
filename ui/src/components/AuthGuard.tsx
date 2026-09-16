@@ -20,6 +20,6 @@ export function AuthGuard() {
 
 export function AdminGuard({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  if (user?.role !== "admin") return <section className="card"><h2 className="text-lg font-semibold">Access denied</h2><p className="my-3 text-ink-muted">Only administrators can manage users.</p><Link to="/" className="btn btn-primary">Back to dashboard</Link></section>;
+  if (user?.role !== "admin") return <section className="card"><h2 className="text-lg font-semibold">Access denied</h2><p className="my-3 text-ink-muted">Only administrators can access this page.</p><Link to="/" className="btn btn-primary">Back to dashboard</Link></section>;
   return children;
 }

@@ -7,6 +7,7 @@ import "time"
 // BrowserBindingHash, which is a SHA-256 hash of a value carried only in a
 // dedicated cookie — never the raw value itself.
 type AuthzTransaction struct {
+	Revoked             bool      `json:"revoked,omitempty"`
 	ReauthenticateAfter time.Time `json:"reauthenticateAfter,omitempty"`
 	ID                  string    `json:"id"`
 	ClientID            string    `json:"clientId"`
@@ -33,6 +34,8 @@ type AuthzTransaction struct {
 // completes login and consent, exchanged for tokens at /token. Only its
 // hash is persisted; the raw code is never stored.
 type AuthorizationCode struct {
+	Revoked             bool      `json:"revoked,omitempty"`
+	CreatedAt           time.Time `json:"createdAt,omitempty"`
 	RetainUntil         time.Time `json:"retainUntil,omitempty"`
 	Hash                string    `json:"hash"`
 	TransactionID       string    `json:"transactionId"`
@@ -55,15 +58,16 @@ type AuthorizationCode struct {
 // replay of that code (which must otherwise already fail safely) can also
 // revoke the token issued from the original, legitimate exchange.
 type AccessToken struct {
-	Hash      string    `json:"hash"`
-	ClientID  string    `json:"clientId"`
-	UserID    string    `json:"userId"`
-	Audience  string    `json:"audience"`
-	Scopes    []string  `json:"scopes"`
-	CodeHash  string    `json:"codeHash,omitempty"`
-	IssuedAt  time.Time `json:"issuedAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	Revoked   bool      `json:"revoked"`
+	IDTokenExpiresAt time.Time `json:"idTokenExpiresAt,omitempty"`
+	Hash             string    `json:"hash"`
+	ClientID         string    `json:"clientId"`
+	UserID           string    `json:"userId"`
+	Audience         string    `json:"audience"`
+	Scopes           []string  `json:"scopes"`
+	CodeHash         string    `json:"codeHash,omitempty"`
+	IssuedAt         time.Time `json:"issuedAt"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	Revoked          bool      `json:"revoked"`
 }
 
 // Consent binds a user's approved scope disclosure to a client at a

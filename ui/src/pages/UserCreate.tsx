@@ -15,7 +15,7 @@ export default function UserCreatePage() {
     // Replace the create entry: browser Back from the new detail returns to search.
     await navigate({ to: "/users/$userId", params: { userId: user.id }, replace: true });
   };
-  return <div className="flex max-w-[900px] flex-col gap-4">
+  return <div className="flex w-full min-w-0 flex-col gap-4">
     <Link to="/users" className="self-start text-sm text-accent hover:underline">← Back to user search</Link>
     <UserEditor user={null} onSave={save} onCancel={() => { void navigate({ to: "/users" }); }} />
   </div>;

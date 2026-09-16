@@ -1,3 +1,4 @@
+import type { ActivityKind, ActivityList, ActivityOverview } from "./activity";
 import type { ClientMetadata, ClientList, ClientResult, OIDCClient } from "./clients";
 import type { TransactionView } from "./oidc";
 export interface UiConfig {
@@ -89,6 +90,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  activity: (kind: ActivityKind, params: { q: string; status: string; page: number }, signal?: AbortSignal) => request<ActivityList>(`/api/admin/activity/${kind}?${new URLSearchParams({ ...params, page: String(params.page) })}`, { signal }),
+  activityOverview: (signal?: AbortSignal) => request<ActivityOverview>("/api/admin/activity/overview", { signal }),
+  revokeActivity: (kind: ActivityKind, id: string) => request<void>(`/api/admin/activity/${kind}/${encodeURIComponent(id)}/revoke`, { method: "POST", body: "{}" }),
   clients: (params: { q: string; page: number }, signal?: AbortSignal) => request<ClientList>(`/api/admin/clients?${new URLSearchParams({ q: params.q, page: String(params.page) })}`, { signal }),
   client: (id: string) => request<OIDCClient>(`/api/admin/clients/${encodeURIComponent(id)}`),
   createClient: (input: ClientMetadata) => request<ClientResult>("/api/admin/clients", { method: "POST", body: JSON.stringify(input) }),

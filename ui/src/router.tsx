@@ -1,3 +1,5 @@
+import ActivityPage from "./pages/Activity";
+import { activityKinds } from "./lib/activity";
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { AdminGuard, AuthGuard } from "./components/AuthGuard";
 import ComponentsPage from "./pages/Components";
@@ -52,8 +54,10 @@ const clientSearchRoute = createRoute({ getParentRoute: () => clientsRoute, path
 const clientCreateRoute = createRoute({ getParentRoute: () => clientsRoute, path: "new", component: ClientCreatePage });
 const clientDetailRoute = createRoute({ getParentRoute: () => clientsRoute, path: "$clientId", component: ClientDetailPage });
 
+const activityRoutes = activityKinds.map(kind => createRoute({ getParentRoute: () => protectedRoute, path: `/activity/${kind}`, component: () => <AdminGuard><ActivityPage key={kind} kind={kind} /></AdminGuard> }));
+
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([loginRoute, oidcContinueRoute, protectedRoute.addChildren([dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, clientsRoute.addChildren([clientSearchRoute, clientCreateRoute, clientDetailRoute]), usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
+  routeTree: rootRoute.addChildren([loginRoute, oidcContinueRoute, protectedRoute.addChildren([...activityRoutes, dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, clientsRoute.addChildren([clientSearchRoute, clientCreateRoute, clientDetailRoute]), usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
   defaultNotFoundComponent: NotFoundPage,
 });
 declare module "@tanstack/react-router" { interface Register { router: typeof router; } }

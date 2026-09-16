@@ -101,7 +101,7 @@ func (s *Service) completeInteraction(r *http.Request, principal identity.Princi
 	err := s.Store.Write(r.Context(), func(tx identity.Tx) error {
 		now := s.Now()
 		txn, err := tx.AuthzTransaction(id)
-		if err != nil || txn.Consumed || !now.Before(txn.ExpiresAt) || !bindingMatches(txn, binding) {
+		if err != nil || txn.Revoked || txn.Consumed || !now.Before(txn.ExpiresAt) || !bindingMatches(txn, binding) {
 			return identity.ErrUnauthorized
 		}
 		session, err := tx.Session(principal.Session.Hash)
@@ -248,7 +248,7 @@ func (s *Service) mintCodeTx(tx identity.Tx, p finishParams) (string, error) {
 	}
 	tx.PruneOIDCState(s.Now())
 	tx.SaveAuthorizationCode(identity.AuthorizationCode{
-		Hash: hashToken(code), TransactionID: p.transactionID, ClientID: p.client.ID, UserID: p.userID,
+		CreatedAt: s.Now(), Hash: hashToken(code), TransactionID: p.transactionID, ClientID: p.client.ID, UserID: p.userID,
 		RedirectURI: p.redirectURI, Scopes: p.scopes, Nonce: p.nonce, AuthTime: p.authTime.Unix(),
 		CodeChallenge: p.codeChallenge, CodeChallengeMethod: p.codeChallengeMethod,
 		ClientUpdatedAt: client.UpdatedAt, ExpiresAt: s.Now().Add(s.Config.CodeTTL),

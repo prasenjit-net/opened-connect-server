@@ -388,3 +388,32 @@ func (s *fileState) PruneOIDCState(now time.Time) {
 		}
 	}
 }
+
+func (s *fileState) ListAuthzTransactions() []AuthzTransaction {
+	out := make([]AuthzTransaction, 0, len(s.AuthzTransactions))
+	for _, v := range s.AuthzTransactions {
+		out = append(out, cloneAuthzTransaction(v))
+	}
+	return out
+}
+func (s *fileState) ListAuthorizationCodes() []AuthorizationCode {
+	out := make([]AuthorizationCode, 0, len(s.AuthorizationCodes))
+	for _, v := range s.AuthorizationCodes {
+		out = append(out, cloneAuthorizationCode(v))
+	}
+	return out
+}
+func (s *fileState) ListAccessTokens() []AccessToken {
+	out := make([]AccessToken, 0, len(s.AccessTokens))
+	for _, v := range s.AccessTokens {
+		out = append(out, cloneAccessToken(v))
+	}
+	return out
+}
+func (s *fileState) ListConsents() []Consent {
+	out := make([]Consent, 0, len(s.Consents))
+	for _, v := range s.Consents {
+		out = append(out, cloneConsent(v))
+	}
+	return out
+}

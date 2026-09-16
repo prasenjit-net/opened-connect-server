@@ -6,6 +6,10 @@ import { IconMenu } from "../icons";
 import ThemeToggle from "./ThemeToggle";
 
 const TITLES: Record<string, string> = {
+ "/activity/transactions": "Transactions",
+ "/activity/codes": "Authorization codes",
+ "/activity/tokens": "Access tokens",
+ "/activity/consents": "Consents",
   "/": "Dashboard",
   "/dashboard": "Dashboard",
   "/components": "Components",

@@ -69,7 +69,7 @@ describe("client management", () => {
   const { cache,testRouter } = setup("/clients");
   await userEvent.click(await screen.findByRole("link",{ name:"Add client" }));
   await userEvent.type(await screen.findByLabelText("Client name"),"Portal");
-  await userEvent.type(screen.getByLabelText("Redirect URIs",{ exact:false }),"https://app.example.com/cb");
+  await userEvent.type(screen.getByRole("textbox",{ name:"Redirect URIs" }),"https://app.example.com/cb");
   await userEvent.click(screen.getByRole("button",{ name:"Create client" }));
   expect(await screen.findByText("one-time-secret")).toBeInTheDocument();
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ client_name:"Portal",redirect_uris:["https://app.example.com/cb"] }));

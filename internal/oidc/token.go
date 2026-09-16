@@ -73,7 +73,7 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	txErr := s.Store.Write(r.Context(), func(tx identity.Tx) error {
 		now := s.Now()
 		record, err := tx.AuthorizationCode(codeHash)
-		if err != nil || record.ClientID != client.ID || record.RedirectURI != redirectURI || VerifyPKCE(verifier, record.CodeChallenge) != nil {
+		if err != nil || record.Revoked || record.ClientID != client.ID || record.RedirectURI != redirectURI || VerifyPKCE(verifier, record.CodeChallenge) != nil {
 			return errInvalidGrant
 		}
 		current, err := tx.Client(client.ID)
@@ -106,7 +106,7 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		record.Consumed = true
 		record.RetainUntil = now.Add(s.Config.AccessTokenTTL)
 		tx.SaveAuthorizationCode(record)
-		tx.SaveAccessToken(identity.AccessToken{Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
+		tx.SaveAccessToken(identity.AccessToken{IDTokenExpiresAt: now.Add(s.Config.IDTokenTTL), Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
 		tx.PruneOIDCState(now)
 		return nil
 	})

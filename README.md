@@ -274,3 +274,19 @@ Password, email, role, and active-status changes revoke the user's browser sessi
 Signing checks certificate validity at issuance and rejects JWT lifetimes extending beyond it. Rotate keys before expiry. Clients requiring signed UserInfo or signed request objects are reported incompatible and cannot silently receive unsigned behavior. Unsupported request objects and response modes return protocol errors. Optional capabilities listed above remain unadvertised.
 
 Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATION_CODE_REVIEW.md](OIDC_AUTHORIZATION_CODE_REVIEW.md). Passing local tests is not OpenID conformance certification.
+
+### Administrative activity monitoring
+
+The admin sidebar has one **Activity** menu entry, with tabs for all four monitoring pages. Administrators can open `/activity/transactions`, `/activity/codes`, `/activity/tokens`, and `/activity/consents`. Each page shows retained records with user/client labels, scopes, lifecycle status, creation/expiry times, explicit search and status filters, 10-record pagination, manual refresh, and automatic refresh every 15 seconds. The admin dashboard summarizes these records and shows the 10 newest records plus user/client totals. Regular users receive a personal dashboard and cannot see or request administrative activity.
+
+Monitoring endpoints use the existing admin browser session boundary:
+
+- `GET /api/admin/activity/overview`
+- `GET /api/admin/activity/{transactions|codes|tokens|consents}?q=...&status=...&page=1`
+- `POST /api/admin/activity/{kind}/{id}/revoke` with `{}` and the session CSRF header
+
+The service rechecks admin authorization within the storage transaction. Responses are not cached, contain derived administrative record IDs, and exclude raw tokens, credential hashes, session/browser bindings, OAuth state/nonce, and PKCE material. List operations are part of the storage interface for future database adapters.
+
+Only active items can be revoked. Consumed codes, completed transactions, expired records, and obsolete consents have no revocation action; the API rechecks eligibility atomically and returns HTTP 409 if an item is no longer active. Revoking an active transaction cancels it; revoking an unused code prevents exchange. Revoking an access token blocks further UserInfo use. Revoking consent cancels current transactions, codes, and tokens for that user/client only; subsequent authorization requires a new consent decision. These mutations are atomic with protocol issuance; retries on an already-revoked record are harmless. Consent revocation preserves consumed/completed/expired history while cancelling active grants. Already-delivered signed ID tokens cannot be recalled; newly issued tokens record the ID-token expiry for display in record details.
+
+This is a view of retained protocol state, not a permanent audit log. Normal expiry cleanup and account/client security changes can remove records. Counts are current retained totals rather than lifetime traffic totals. Older records without creation or ID-token-expiry metadata display an unavailable timestamp.
