@@ -12,30 +12,14 @@ import (
 	"github.com/prasenjit-net/opened-connect-server/internal/oidc/capability"
 )
 
-// securityCriticalParams must never appear more than once in a single
-// /authorize request, whether it arrives as a GET query or a POST body.
-var securityCriticalParams = []string{
-	"response_type", "client_id", "redirect_uri", "scope", "state", "nonce",
-	"code_challenge", "code_challenge_method", "prompt", "max_age",
-}
-
 var supportedPrompts = []string{"none", "login", "consent", "select_account"}
 
 // parseAuthorizeParams reads request parameters from exactly one source —
 // the query string for GET, the form body for POST — so a single request
 // can never mix conflicting query and body values for the same parameter.
 func parseAuthorizeParams(r *http.Request) (url.Values, bool) {
-	switch r.Method {
-	case http.MethodGet:
-		return r.URL.Query(), true
-	case http.MethodPost:
-		if err := r.ParseForm(); err != nil {
-			return nil, false
-		}
-		return r.PostForm, true
-	default:
-		return nil, false
-	}
+	params, err := parseProtocolForm(r)
+	return params, err == nil
 }
 
 // currentPrincipal resolves the browser's session cookie the same way
@@ -60,12 +44,15 @@ func clearSessionCookie(w http.ResponseWriter, secure bool) {
 // redirect URI are validated render an HTML error page directly; failures
 // after that point redirect back to the relying party with an OAuth error.
 func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
-	params, ok := parseAuthorizeParams(r)
-	if !ok {
-		writeAuthorizeErrorPage(w, "Only GET and POST requests are supported.")
+	if !s.allowTraffic(w, r, "authorize") {
 		return
 	}
-	for _, key := range securityCriticalParams {
+	params, ok := parseAuthorizeParams(r)
+	if !ok {
+		writeAuthorizeErrorPage(w, "Use GET query parameters or a form-encoded POST without duplicate, malformed, or oversized parameters.")
+		return
+	}
+	for key := range params {
 		if len(params[key]) > 1 {
 			writeAuthorizeErrorPage(w, "The request contains a duplicate "+key+" parameter.")
 			return
@@ -96,6 +83,22 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	state := params.Get("state")
 	fail := func(code, description string) { redirectWithError(w, r, redirectURI, code, description, state) }
 
+	if _, present := params["request"]; present {
+		fail("request_not_supported", "Request objects are not supported.")
+		return
+	}
+	if _, present := params["request_uri"]; present {
+		fail("request_uri_not_supported", "Request URIs are not supported.")
+		return
+	}
+	if mode := params.Get("response_mode"); mode != "" && mode != "query" {
+		fail("invalid_request", "Only query response mode is supported.")
+		return
+	}
+	if params.Has("claims") || params.Has("acr_values") || params.Has("id_token_hint") {
+		fail("invalid_request", "The requested optional authentication parameter is not supported.")
+		return
+	}
 	if params.Get("response_type") != "code" {
 		fail("unsupported_response_type", "Only the code response type is supported.")
 		return
@@ -146,14 +149,13 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		maxAge = &v
-	} else if client.DefaultMaxAge > 0 {
-		v := client.DefaultMaxAge
-		maxAge = &v
+	} else {
+		maxAge = client.DefaultMaxAge
 	}
 
 	now := s.Now()
 	principal, sessionErr := s.currentPrincipal(r)
-	fresh := sessionErr == nil && (maxAge == nil || now.Sub(principal.Session.AuthTime) <= time.Duration(*maxAge)*time.Second)
+	fresh := sessionErr == nil && sessionFresh(principal.Session, now, maxAge)
 	needsLogin := sessionErr != nil || slices.Contains(prompts, "login") || !fresh
 
 	if slices.Contains(prompts, "none") {
@@ -173,7 +175,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		redirectTo := s.mintCode(r.Context(), finishParams{
 			client: client, redirectURI: redirectURI, scopes: scopes, state: state,
 			nonce: params.Get("nonce"), codeChallenge: params.Get("code_challenge"), codeChallengeMethod: params.Get("code_challenge_method"),
-			userID: principal.User.ID, authTime: principal.Session.AuthTime,
+			userID: principal.User.ID, authTime: principal.Session.AuthTime, sessionHash: principal.Session.Hash, maxAge: maxAge, requireConsent: true,
 		})
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -191,6 +193,9 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		fail("server_error", "Unable to start this sign-in request.")
 		return
 	}
+	if cookie, err := r.Cookie(authzBindingCookieName); err == nil && len(cookie.Value) == 43 {
+		binding = cookie.Value
+	}
 	txn := identity.AuthzTransaction{
 		ID:                  txnID,
 		ClientID:            client.ID,
@@ -204,9 +209,12 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:              maxAge,
 		LoginHint:           params.Get("login_hint"),
 		BrowserBindingHash:  hashToken(binding),
-		ClientUpdatedAt:     time.Unix(client.UpdatedAt, 0).UTC(),
+		ClientUpdatedAt:     time.Unix(0, client.UpdatedAt).UTC(),
 		ExpiresAt:           now.Add(s.Config.TransactionTTL),
 		CreatedAt:           now,
+	}
+	if needsLogin {
+		txn.ReauthenticateAfter = now
 	}
 	if !needsLogin {
 		txn.UserID = principal.User.ID
@@ -236,7 +244,8 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		// by making the browser forget it for this navigation. This does
 		// not revoke the session server-side, so it remains usable
 		// elsewhere (e.g. another tab) — prompt=login only asks this
-		// browser to re-assert identity for this specific request.
+		// browser to re-assert identity for this specific request. The stored
+		// ReauthenticateAfter boundary is enforced during continuation.
 		clearSessionCookie(w, s.Config.CookieSecure)
 		http.Redirect(w, r, "/login?redirect="+url.QueryEscape(continuation), http.StatusFound)
 		return

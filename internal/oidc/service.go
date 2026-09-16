@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"strings"
 	"time"
 
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
@@ -10,6 +11,7 @@ import (
 // runtime. It mirrors config.OIDCConfig but lives here so this package
 // doesn't depend on internal/config for its core logic.
 type Config struct {
+	AllowedOrigins []string
 	Issuer         string
 	TransactionTTL time.Duration
 	CodeTTL        time.Duration
@@ -32,8 +34,10 @@ type Service struct {
 	Now      func() time.Time
 
 	clientAuthLimiter *clientAuthLimiter
+	trafficLimiter    *clientAuthLimiter
 }
 
 func New(idService *identity.Service, store identity.Store, keys *KeyStore, cfg Config) *Service {
-	return &Service{Identity: idService, Store: store, Keys: keys, Config: cfg, Now: time.Now, clientAuthLimiter: newClientAuthLimiter()}
+	cfg.Issuer = strings.TrimSuffix(cfg.Issuer, "/")
+	return &Service{Identity: idService, Store: store, Keys: keys, Config: cfg, Now: time.Now, clientAuthLimiter: newClientAuthLimiter(), trafficLimiter: newClientAuthLimiter()}
 }

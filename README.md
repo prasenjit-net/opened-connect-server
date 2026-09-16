@@ -250,3 +250,27 @@ Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve 
 Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
 
 This initial delivery implements OpenID Connect Core's authorization-code profile plus Discovery: PKCE S256 (required, no downgrade), `client_secret_basic`/`client_secret_post`/`none` client authentication, opaque access tokens, RS256-signed ID tokens, and scope-gated UserInfo (`openid`, `profile`, `email`, `address`, `phone`). A registered client is usable with these endpoints only when its metadata is fully compatible; the client detail screen flags any client requesting capabilities this provider doesn't implement yet (pairwise subjects, `private_key_jwt`/`client_secret_jwt`, ID-token/UserInfo encryption, non-`RS256` signing, or response/grant types other than `code`/`authorization_code`) instead of silently downgrading it. Refresh tokens, `/revoke`, `/introspect`, RP-initiated logout, request objects, dynamic client registration, and WebFinger are not implemented in this delivery.
+
+### Authorization-code security and browser clients
+
+Set exact browser client origins for cross-origin `/token` and `/userinfo` calls:
+
+```yaml
+oidc:
+  enabled: true
+  issuer: https://identity.example.com
+  allowedOrigins:
+    - https://app.example.com
+```
+
+The default origin list is empty. Discovery and JWKS remain public; protocol CORS never allows credentials. Issuers are normalized once by removing a trailing slash; user information, query strings, fragments, and path prefixes are rejected.
+
+Authorization requests and token forms are limited to 16 KiB. Duplicate parameters, malformed encoding, conflicting client credentials, and mixed POST query/body parameters are rejected. Each protocol endpoint allows up to 240 requests per peer IP per minute, with separate failed-client-credential limits of 30 per client/peer pair per 15 minutes. Successful authentication does not consume the failed-credential allowance. These in-process limits use the direct peer address; configure source limits at a trusted reverse proxy as well when deploying behind one.
+
+Consent completion and token issuance commit atomically. Authorization-code replay requires correct client, redirect, and PKCE proof before revoking issued access tokens; consumed-code evidence is retained through the access-token lifetime. Forced login and `max_age` are enforced against stored session authentication timestamps. An existing browser binding is reused for additional tabs.
+
+Password, email, role, and active-status changes revoke the user's browser sessions, pending codes/transactions, access tokens, and consent. Client updates, secret rotation, and deletion invalidate that client's protocol state. Updating a login email signs the user out and requires login with the new address. Self-contained ID tokens already delivered to relying parties remain verifiable until their expiry; access-token revocation does not retract those JWTs.
+
+Signing checks certificate validity at issuance and rejects JWT lifetimes extending beyond it. Rotate keys before expiry. Clients requiring signed UserInfo or signed request objects are reported incompatible and cannot silently receive unsigned behavior. Unsupported request objects and response modes return protocol errors. Optional capabilities listed above remain unadvertised.
+
+Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATION_CODE_REVIEW.md](OIDC_AUTHORIZATION_CODE_REVIEW.md). Passing local tests is not OpenID conformance certification.

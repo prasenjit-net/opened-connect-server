@@ -20,8 +20,8 @@ type ProtocolClient struct {
 	SubjectType              string
 	IDTokenSignedResponseAlg string
 	RequireAuthTime          bool
-	DefaultMaxAge            int64
-	UpdatedAt                int64 // Unix seconds; stands in for a policy revision
+	DefaultMaxAge            *int64
+	UpdatedAt                int64 // Monotonic nanosecond policy revision
 	Compatible               bool
 	IncompatibilityReasons   []string
 }
@@ -29,7 +29,7 @@ type ProtocolClient struct {
 func projectRuntimeClient(c ClientRecord) ProtocolClient {
 	m := c.Metadata
 	compatible, reasons := auditMetadata(m)
-	var maxAge int64
+	var maxAge *int64
 	_ = json.Unmarshal(m["default_max_age"], &maxAge)
 	var requireAuthTime bool
 	_ = json.Unmarshal(m["require_auth_time"], &requireAuthTime)
@@ -44,7 +44,7 @@ func projectRuntimeClient(c ClientRecord) ProtocolClient {
 		IDTokenSignedResponseAlg: m.text("id_token_signed_response_alg"),
 		RequireAuthTime:          requireAuthTime,
 		DefaultMaxAge:            maxAge,
-		UpdatedAt:                c.UpdatedAt.Unix(),
+		UpdatedAt:                c.UpdatedAt.UnixNano(),
 		Compatible:               compatible,
 		IncompatibilityReasons:   reasons,
 	}
@@ -65,3 +65,6 @@ func (s *Service) ProtocolClient(ctx context.Context, id string) (ProtocolClient
 	})
 	return result, err
 }
+
+// RuntimeClient projects a client snapshot inside an existing transaction.
+func RuntimeClient(c ClientRecord) ProtocolClient { return projectRuntimeClient(c) }

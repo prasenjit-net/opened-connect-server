@@ -327,6 +327,8 @@ func TestExtendedProfilesAndEntitlements(t *testing.T) {
 	res = rig.request(t, "PUT", "/user/profile", input, alice)
 	expectStatus(t, res, 200)
 	saved := profileFrom(t, res)
+	expectStatus(t, rig.request(t, "GET", "/user/profile", nil, alice), 401)
+	alice = rig.login(t, saved.Email, testPassword)
 	if saved.ID != aliceProfile.ID || saved.Sub != saved.ID || saved.Role != identity.RoleUser || saved.EmailVerified || saved.PhoneNumberVerified || saved.FamilyName != "Example" || saved.Address.Locality != "Example" || saved.ClaimUpdatedAt == 0 {
 		t.Fatalf("bad profile: %+v", saved)
 	}

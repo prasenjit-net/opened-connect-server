@@ -62,6 +62,7 @@ type UIConfig struct {
 // RefreshInactivityTTL are reserved for the future refresh-token milestone
 // and are not yet enforced.
 type OIDCConfig struct {
+	AllowedOrigins       []string      `mapstructure:"allowedOrigins" yaml:"allowedOrigins"`
 	Enabled              bool          `mapstructure:"enabled" yaml:"enabled"`
 	Issuer               string        `mapstructure:"issuer" yaml:"issuer"`
 	TransactionTTL       time.Duration `mapstructure:"transactionTTL" yaml:"transactionTTL"`
@@ -195,11 +196,24 @@ func Load(v *viper.Viper) (Config, error) {
 		if err != nil || issuer.Host == "" || (issuer.Scheme != "http" && issuer.Scheme != "https") {
 			return Config{}, fmt.Errorf("oidc.issuer must be an absolute HTTP or HTTPS URL")
 		}
-		if issuer.Path != "" && issuer.Path != "/" {
+		if issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || strings.Contains(cfg.OIDC.Issuer, "#") {
+			return Config{}, fmt.Errorf("oidc.issuer must not contain user information, a query, or a fragment")
+		}
+		cfg.OIDC.Issuer = strings.TrimSuffix(cfg.OIDC.Issuer, "/")
+		if issuer.RawPath != "" || (issuer.Path != "" && issuer.Path != "/") {
 			return Config{}, fmt.Errorf("oidc.issuer must not have a path; path-prefixed issuers are not yet supported")
 		}
 		if cfg.App.Env != "development" && cfg.App.Env != "test" && issuer.Scheme != "https" {
 			return Config{}, fmt.Errorf("oidc.issuer must use HTTPS outside development")
+		}
+		for _, origin := range cfg.OIDC.AllowedOrigins {
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.Contains(origin, "#") {
+				return Config{}, fmt.Errorf("oidc.allowedOrigins must contain exact HTTP(S) origins without paths, user information, query, or fragment")
+			}
+			if cfg.App.Env != "development" && cfg.App.Env != "test" && parsed.Scheme != "https" {
+				return Config{}, fmt.Errorf("oidc.allowedOrigins must use HTTPS outside development")
+			}
 		}
 		for name, d := range map[string]time.Duration{
 			"oidc.transactionTTL": cfg.OIDC.TransactionTTL,
@@ -285,6 +299,7 @@ ui:
 # oidc:
 #   enabled: false
 #   issuer: https://identity.example.com # defaults to app.url when unset
+#   allowedOrigins: [] # exact browser client origins, e.g. [https://app.example.com]
 #   transactionTTL: 10m
 #   codeTTL: 60s
 #   accessTokenTTL: 10m

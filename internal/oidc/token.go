@@ -3,7 +3,6 @@ package oidc
 import (
 	"encoding/json"
 	"errors"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -26,24 +25,26 @@ type tokenResponse struct {
 // rule), and every response is an OAuth-shaped error or a no-store token
 // response — never internal/api's management JSON envelope.
 func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.allowTraffic(w, r, "token") {
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "Use POST.")
 		return
 	}
-	contentType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if contentType != "application/x-www-form-urlencoded" {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Use application/x-www-form-urlencoded.")
+	form, err := parseProtocolForm(r)
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Malformed, duplicate, or oversized form parameters.")
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Malformed form body.")
-		return
-	}
-	form := r.PostForm
 
 	client, err := s.authenticateClient(r, form)
 	if err != nil {
+		if errors.Is(err, ErrClientAuthConflict) {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Conflicting client authentication methods.")
+			return
+		}
 		status := http.StatusUnauthorized
 		if errors.Is(err, ErrClientAuthLimited) {
 			status = http.StatusTooManyRequests
@@ -65,80 +66,63 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := s.Now()
 	codeHash := hashToken(code)
-	var (
-		userProfile identity.Profile
-		scopes      []string
-		nonce       string
-		authTime    int64
-	)
-	// Re-read the code, verify it, and consume it inside one transaction so
-	// concurrent exchanges of the same code produce at most one success.
+	var scopes []string
+	var accessToken, idToken string
+	replay := false
 	txErr := s.Store.Write(r.Context(), func(tx identity.Tx) error {
+		now := s.Now()
 		record, err := tx.AuthorizationCode(codeHash)
-		if err != nil {
+		if err != nil || record.ClientID != client.ID || record.RedirectURI != redirectURI || VerifyPKCE(verifier, record.CodeChallenge) != nil {
 			return errInvalidGrant
 		}
+		current, err := tx.Client(client.ID)
+		if err != nil || !identity.RuntimeClient(current).Compatible || current.UpdatedAt.UnixNano() != client.UpdatedAt || !current.UpdatedAt.Equal(record.ClientUpdatedAt) {
+			return errInvalidGrant
+		}
+		// Only an authenticated, correctly bound replay may revoke issued tokens.
+		// Commit the revocation; returning an error here would roll it back.
 		if record.Consumed {
-			// The code has already been exchanged: this is a reuse attempt,
-			// a signal the code may have leaked. Revoke whatever access
-			// token the original, legitimate exchange minted.
 			tx.RevokeAccessTokensForCode(codeHash)
-			return errInvalidGrant
+			replay = true
+			return nil
 		}
-		if !now.Before(record.ExpiresAt) || record.ClientID != client.ID || record.RedirectURI != redirectURI {
-			return errInvalidGrant
-		}
-		if err := VerifyPKCE(verifier, record.CodeChallenge); err != nil {
+		if !now.Before(record.ExpiresAt) {
 			return errInvalidGrant
 		}
 		user, err := tx.User(record.UserID)
 		if err != nil || !user.Active {
 			return errInvalidGrant
 		}
-		currentClient, err := tx.Client(record.ClientID)
-		if err != nil || currentClient.UpdatedAt.Unix() != record.ClientUpdatedAt.Unix() {
-			return errInvalidGrant
+		accessToken, err = randomToken()
+		if err != nil {
+			return err
 		}
-		record.Consumed = true
-		tx.SaveAuthorizationCode(record)
-		tx.PruneOIDCState(now)
-
-		userProfile = user.Profile
+		idToken, err = s.signIDToken(client, user.Sub, record.Nonce, time.Unix(record.AuthTime, 0).UTC(), now)
+		if err != nil {
+			return err
+		}
 		scopes = record.Scopes
-		nonce = record.Nonce
-		authTime = record.AuthTime
+		record.Consumed = true
+		record.RetainUntil = now.Add(s.Config.AccessTokenTTL)
+		tx.SaveAuthorizationCode(record)
+		tx.SaveAccessToken(identity.AccessToken{Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
+		tx.PruneOIDCState(now)
 		return nil
 	})
-	if txErr != nil {
+	if errors.Is(txErr, errInvalidGrant) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "The authorization code is invalid, expired, or already used.")
 		return
 	}
-
-	accessToken, err := randomToken()
-	if err != nil {
-		writeOAuthError(w, http.StatusInternalServerError, "server_error", "Unable to issue an access token.")
-		return
-	}
-	if err := s.Store.Write(r.Context(), func(tx identity.Tx) error {
-		tx.SaveAccessToken(identity.AccessToken{
-			Hash: hashToken(accessToken), ClientID: client.ID, UserID: userProfile.ID,
-			Audience: "userinfo", Scopes: scopes, CodeHash: codeHash,
-			IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL),
-		})
-		return nil
-	}); err != nil {
-		writeOAuthError(w, http.StatusInternalServerError, "server_error", "Unable to issue an access token.")
+	if txErr != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "Unable to issue tokens.")
 		return
 	}
 
-	idToken, err := s.signIDToken(client, userProfile.Sub, nonce, time.Unix(authTime, 0).UTC(), now)
-	if err != nil {
-		writeOAuthError(w, http.StatusInternalServerError, "server_error", "Unable to sign the ID token.")
+	if replay {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "The authorization code has already been used.")
 		return
 	}
-
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

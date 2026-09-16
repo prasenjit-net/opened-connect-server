@@ -160,3 +160,26 @@ func TestSPAInitialTheme(t *testing.T) {
 		}
 	}
 }
+
+func TestProtocolErrorsNeverFallThroughToSPA(t *testing.T) {
+	cfg := provisionedOIDCConfig(t)
+	for _, dev := range []bool{false, true} {
+		cfg.UI.DevProxyURL = "http://127.0.0.1:1"
+		app, err := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), Options{DevMode: dev, UIFS: fstest.MapFS{"ui/dist/index.html": {Data: []byte("SPA")}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			method, path string
+			status       int
+		}{
+			{"GET", "/token", 405}, {"DELETE", "/authorize", 405}, {"POST", "/jwks", 405}, {"PUT", "/userinfo", 405}, {"GET", "/token/", 404}, {"GET", "/authorize/missing", 404}, {"GET", "/userinfo/missing", 404},
+		} {
+			w := httptest.NewRecorder()
+			app.Handler().ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+			if w.Code != tc.status || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+				t.Errorf("dev=%v %s %s: %d %s", dev, tc.method, tc.path, w.Code, w.Body.String())
+			}
+		}
+	}
+}

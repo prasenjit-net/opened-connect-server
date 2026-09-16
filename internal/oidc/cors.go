@@ -1,34 +1,31 @@
 package oidc
 
-import "net/http"
+import (
+	"net/http"
+	"slices"
+)
 
-// WithCORS wraps /token and /userinfo with narrow, non-credentialed CORS.
-// These endpoints never trust cookies for authentication (only client
-// credentials and bearer tokens), so allowing a cross-origin browser public
-// client to read the response doesn't weaken anything — credentialed
-// access (Access-Control-Allow-Credentials) is never enabled here, and
-// global management API CORS is a separate, unrelated concern this does
-// not touch.
-func WithCORS(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w, r)
-		next(w, r)
-	}
+// Browser token access is explicitly configured and never credentialed.
+// This is a response-sharing policy, not a replacement for client authentication.
+func (s *Service) WithCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { s.setCORSHeaders(w, r); next(w, r) }
 }
-
-// CORSPreflight answers a browser's CORS preflight OPTIONS request for
-// /token or /userinfo.
-func CORSPreflight(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w, r)
+func (s *Service) CORSPreflight(w http.ResponseWriter, r *http.Request) {
+	if !s.setCORSHeaders(w, r) {
+		writeOAuthError(w, http.StatusForbidden, "invalid_request", "Origin is not allowed.")
+		return
+	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	w.Header().Set("Access-Control-Max-Age", "600")
 	w.WriteHeader(http.StatusNoContent)
 }
-
-func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" {
+func (s *Service) setCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
+	w.Header().Add("Vary", "Origin")
+	origin := r.Header.Get("Origin")
+	if origin != "" && slices.Contains(s.Config.AllowedOrigins, origin) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
+		return true
 	}
+	return false
 }

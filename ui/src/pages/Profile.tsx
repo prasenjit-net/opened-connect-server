@@ -22,7 +22,15 @@ export default function ProfilePage() {
   const [passwordError, setPasswordError] = useState("");
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (saving) return; setSaving(true); setProfileError("");
-    try { await api.updateProfile({ ...claims, custom_attributes: parseCustomAttributes(custom), name, email }); await auth.refresh(); push("success", "Profile updated."); }
+    try {
+      const saved = await api.updateProfile({ ...claims, custom_attributes: parseCustomAttributes(custom), name, email });
+      if (saved.email !== auth.user?.email) {
+        auth.forget();
+        push("success", "Email updated. Sign in again with your new email address.");
+      } else {
+        await auth.refresh(); push("success", "Profile updated.");
+      }
+    }
     catch (error) { setProfileError(error instanceof Error ? error.message : "Unable to save profile."); }
     finally { setSaving(false); }
   };
@@ -40,7 +48,7 @@ export default function ProfilePage() {
       <form onSubmit={save} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5 text-sm font-medium">Name<input className="input" autoComplete="name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">Email<input className="input" type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-        <p className="text-xs text-ink-faint">Email verified: {auth.user?.email_verified ? "Yes" : "No"} · Phone verified: {auth.user?.phone_number_verified ? "Yes" : "No"}. Changing either value clears its verification.</p>
+        <p className="text-xs text-ink-faint">Email verified: {auth.user?.email_verified ? "Yes" : "No"} · Phone verified: {auth.user?.phone_number_verified ? "Yes" : "No"}. Changing either value clears its verification. Changing your email also signs you out of all devices and revokes connected app access.</p>
         <p className="break-all text-xs text-ink-faint">Subject: {auth.user?.sub ?? auth.user?.id} · Updated: {auth.user?.updatedAt}</p>
         <ProfileFields value={claims} onChange={setClaims} custom={custom} onCustomChange={setCustom} />
         {profileError && <p role="alert" className="text-sm text-err">{profileError}</p>}

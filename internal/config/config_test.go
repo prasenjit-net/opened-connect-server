@@ -106,3 +106,48 @@ func TestOIDCDisabledSkipsIssuerValidation(t *testing.T) {
 		t.Fatalf("disabled OIDC config should not require an issuer: %v", err)
 	}
 }
+
+func TestOIDCIssuerNormalizationAndForbiddenComponents(t *testing.T) {
+	for _, issuer := range []string{"https://user@identity.example.com", "https://identity.example.com?x=1", "https://identity.example.com?", "https://identity.example.com/%2f", "https://identity.example.com/%2F", "https://identity.example.com#fragment", "https://identity.example.com#"} {
+		v := viper.New()
+		SetDefaults(v)
+		v.Set("oidc.enabled", true)
+		v.Set("oidc.issuer", issuer)
+		if _, err := Load(v); err == nil {
+			t.Errorf("invalid issuer accepted: %s", issuer)
+		}
+	}
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oidc.enabled", true)
+	v.Set("oidc.issuer", "https://identity.example.com/")
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OIDC.Issuer != "https://identity.example.com" {
+		t.Fatalf("issuer not normalized: %s", cfg.OIDC.Issuer)
+	}
+}
+func TestOIDCAllowedOriginsValidation(t *testing.T) {
+	for _, origin := range []string{"*", "null", "https://rp.example.com/", "https://rp.example.com/path", "https://user@rp.example.com", "https://rp.example.com?x=1", "https://rp.example.com#"} {
+		v := viper.New()
+		SetDefaults(v)
+		v.Set("oidc.enabled", true)
+		v.Set("oidc.allowedOrigins", []string{origin})
+		if _, err := Load(v); err == nil {
+			t.Errorf("invalid origin accepted: %s", origin)
+		}
+	}
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oidc.enabled", true)
+	v.Set("oidc.allowedOrigins", []string{"https://rp.example.com"})
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.OIDC.AllowedOrigins) != 1 {
+		t.Fatal("allowed origins not loaded")
+	}
+}

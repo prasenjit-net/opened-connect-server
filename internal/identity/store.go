@@ -77,6 +77,11 @@ type ReadTx interface {
 	Consent(userID, clientID string) (Consent, error)
 }
 
+// Security mutations must invalidate protocol grants atomically: SaveClient and
+// DeleteClient invalidate the client's codes, transactions, consent and tokens.
+// SaveUser on password/email/role/active changes, DeleteUser and
+// DeleteUserSessions invalidate the user's same protocol state as well as sessions.
+// SaveClient must advance UpdatedAt monotonically, even with an unchanged clock.
 type Tx interface {
 	SaveClient(ClientRecord)
 	DeleteClient(id string)

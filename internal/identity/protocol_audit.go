@@ -14,7 +14,7 @@ func auditMetadata(m ClientMetadata) (bool, []string) {
 			break
 		}
 	}
-	return capability.Audit(capability.ClientProfile{
+	compatible, reasons := capability.Audit(capability.ClientProfile{
 		ResponseTypes:            m.list("response_types"),
 		GrantTypes:               m.list("grant_types"),
 		TokenEndpointAuthMethod:  m.text("token_endpoint_auth_method"),
@@ -22,4 +22,11 @@ func auditMetadata(m ClientMetadata) (bool, []string) {
 		RequestsEncryption:       encrypted,
 		IDTokenSignedResponseAlg: m.text("id_token_signed_response_alg"),
 	})
+	for _, key := range []string{"userinfo_signed_response_alg", "request_object_signing_alg"} {
+		if m.text(key) != "" {
+			reasons = append(reasons, key+" is not supported")
+			compatible = false
+		}
+	}
+	return compatible, reasons
 }

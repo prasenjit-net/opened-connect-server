@@ -3,7 +3,6 @@ package oidc
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/prasenjit-net/opened-connect-server/internal/oidc/capability"
 )
@@ -45,7 +44,7 @@ var supportedClaims = []string{
 }
 
 func (s *Service) discoveryDocument() discoveryDocument {
-	issuer := strings.TrimSuffix(s.Config.Issuer, "/")
+	issuer := s.Config.Issuer
 	return discoveryDocument{
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             issuer + "/authorize",

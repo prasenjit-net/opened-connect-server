@@ -205,6 +205,9 @@ func (h *authHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		h.failure(w, err)
 		return
 	}
+	if user.Email != current(r).User.Email {
+		h.cookie(w, "", time.Time{})
+	}
 	respondJSON(w, 200, user)
 }
 func (h *authHandler) password(w http.ResponseWriter, r *http.Request) {

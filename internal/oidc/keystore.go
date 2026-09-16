@@ -292,11 +292,43 @@ func (k *KeyStore) PublicJWKS() jose.JSONWebKeySet {
 // Sign builds and signs a JWT from the given claims values (merged in
 // order, per jwt.Builder.Claims) using the active RSA key and its kid.
 func (k *KeyStore) Sign(claims ...interface{}) (string, error) {
+	return k.signAt(time.Now(), claims...)
+}
+func (k *KeyStore) signAt(now time.Time, claims ...interface{}) (string, error) {
 	k.mu.RLock()
 	active := k.active
 	k.mu.RUnlock()
 	if active == nil {
 		return "", ErrNoActiveKey
+	}
+	if now.Before(active.cert.NotBefore) || !now.Before(active.cert.NotAfter) {
+		return "", errors.New("signing certificate is not currently valid")
+	}
+	// Inspect the merged claims, including later overrides, before signing.
+	merged := map[string]json.RawMessage{}
+	for _, c := range claims {
+		encoded, err := json.Marshal(c)
+		if err != nil {
+			return "", err
+		}
+		fields := map[string]json.RawMessage{}
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			return "", err
+		}
+		for name, value := range fields {
+			merged[name] = value
+		}
+	}
+	for _, name := range []string{"iat", "nbf", "exp"} {
+		if raw, ok := merged[name]; ok {
+			var stamp float64
+			if err := json.Unmarshal(raw, &stamp); err != nil {
+				return "", err
+			}
+			if stamp < float64(active.cert.NotBefore.Unix()) || stamp > float64(active.cert.NotAfter.Unix()) {
+				return "", errors.New("JWT validity exceeds signing certificate lifetime")
+			}
+		}
 	}
 	opts := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", active.record.KID)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: active.private}, opts)

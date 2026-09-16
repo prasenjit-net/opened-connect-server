@@ -79,5 +79,5 @@ func (s *Service) signIDToken(client identity.ProtocolClient, sub, nonce string,
 	if nonce != "" {
 		extra["nonce"] = nonce
 	}
-	return s.Keys.Sign(claims, extra)
+	return s.Keys.signAt(issuedAt, claims, extra)
 }

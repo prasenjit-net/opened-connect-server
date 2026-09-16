@@ -191,6 +191,9 @@ func (s *fileState) SaveUser(user User) error {
 			return ErrConflict
 		}
 	}
+	if old, ok := s.UsersMap[user.ID]; ok && (old.PasswordHash != user.PasswordHash || old.Email != user.Email || old.Role != user.Role || old.Active != user.Active) {
+		s.DeleteUserSessions(user.ID)
+	}
 	s.UsersMap[user.ID] = cloneUser(user)
 	return nil
 }
@@ -198,6 +201,22 @@ func (s *fileState) DeleteUser(id string)        { delete(s.UsersMap, id); s.Del
 func (s *fileState) SaveSession(session Session) { s.Sessions[session.Hash] = session }
 func (s *fileState) DeleteSession(hash string)   { delete(s.Sessions, hash) }
 func (s *fileState) DeleteUserSessions(id string) {
+	s.RevokeAccessTokensForUser(id)
+	for k, c := range s.AuthorizationCodes {
+		if c.UserID == id {
+			delete(s.AuthorizationCodes, k)
+		}
+	}
+	for k, t := range s.AuthzTransactions {
+		if t.UserID == id {
+			delete(s.AuthzTransactions, k)
+		}
+	}
+	for k, c := range s.Consents {
+		if c.UserID == id {
+			delete(s.Consents, k)
+		}
+	}
 	for k, sess := range s.Sessions {
 		if sess.UserID == id {
 			delete(s.Sessions, k)
@@ -230,9 +249,33 @@ func (s *fileState) SaveClient(c ClientRecord) {
 	if s.ClientsMap == nil {
 		s.ClientsMap = map[string]ClientRecord{}
 	}
+	if old, ok := s.ClientsMap[c.ID]; ok {
+		if !c.UpdatedAt.After(old.UpdatedAt) {
+			c.UpdatedAt = old.UpdatedAt.Add(time.Nanosecond)
+		}
+		s.invalidateClientGrants(c.ID)
+	}
 	s.ClientsMap[c.ID] = cloneClient(c)
 }
-func (s *fileState) DeleteClient(id string) { delete(s.ClientsMap, id) }
+func (s *fileState) DeleteClient(id string) { s.invalidateClientGrants(id); delete(s.ClientsMap, id) }
+func (s *fileState) invalidateClientGrants(id string) {
+	s.RevokeAccessTokensForClient(id)
+	for k, c := range s.AuthorizationCodes {
+		if c.ClientID == id {
+			delete(s.AuthorizationCodes, k)
+		}
+	}
+	for k, t := range s.AuthzTransactions {
+		if t.ClientID == id {
+			delete(s.AuthzTransactions, k)
+		}
+	}
+	for k, c := range s.Consents {
+		if c.ClientID == id {
+			delete(s.Consents, k)
+		}
+	}
+}
 
 func (s *fileState) AuthzTransaction(id string) (AuthzTransaction, error) {
 	t, ok := s.AuthzTransactions[id]
@@ -325,7 +368,8 @@ func (s *fileState) SaveConsent(c Consent) {
 }
 
 // PruneOIDCState deletes expired authorization transactions, expired
-// authorization codes, and expired access tokens. It mirrors PruneSessions
+// unused codes, consumed codes past their token retention deadline, and expired
+// access tokens. It mirrors PruneSessions
 // and is called opportunistically from write paths that touch this state.
 func (s *fileState) PruneOIDCState(now time.Time) {
 	for k, t := range s.AuthzTransactions {
@@ -334,7 +378,7 @@ func (s *fileState) PruneOIDCState(now time.Time) {
 		}
 	}
 	for k, c := range s.AuthorizationCodes {
-		if !c.ExpiresAt.After(now) {
+		if !c.ExpiresAt.After(now) && !c.RetainUntil.After(now) {
 			delete(s.AuthorizationCodes, k)
 		}
 	}

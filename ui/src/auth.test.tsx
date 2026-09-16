@@ -134,6 +134,16 @@ describe("account screens", () => {
     expect(screen.queryByLabelText("Email verified")).not.toBeInTheDocument();
     expect(api.users).not.toHaveBeenCalled();
   });
+  it("signs out after changing the login email", async () => {
+    vi.spyOn(api, "updateProfile").mockResolvedValue({ ...admin, email: "new@example.com" });
+    setup("/profile");
+    const email = await screen.findByLabelText("Email");
+    await userEvent.clear(email);
+    await userEvent.type(email, "new@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByText("Email updated. Sign in again with your new email address.")).toBeInTheDocument();
+  });
   it("updates the profile and signs out after a password change", async () => {
     const update = vi.spyOn(api, "updateProfile").mockResolvedValue({ ...admin, name: "Updated" });
     const change = vi.spyOn(api, "changePassword").mockResolvedValue(undefined);

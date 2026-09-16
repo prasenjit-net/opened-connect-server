@@ -1,0 +1,7 @@
+http://localhost:8080/authorize?client_id=0e-NckfSEW5fUmy01XOy2m7GLeuiKBa6SodvrAqwjEQ&response_type=code&redirect_uri=http://localhost:3000/redirect&scope=openid
+
+
+
+
+authorization_code
+e_JWoRZocilBmfOmLp6sWmx4znHwDoueX0ez0rm6O38bjW5KhTnen9LsO0vRoFkPa4dN8X3MUHw12LPJNYYotk

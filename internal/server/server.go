@@ -66,6 +66,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 		}
 		app.oidc = oidc.New(auth, store, keys, oidc.Config{
 			Issuer:         cfg.OIDC.Issuer,
+			AllowedOrigins: cfg.OIDC.AllowedOrigins,
 			TransactionTTL: cfg.OIDC.TransactionTTL,
 			CodeTTL:        cfg.OIDC.CodeTTL,
 			AccessTokenTTL: cfg.OIDC.AccessTokenTTL,
@@ -98,16 +99,38 @@ func (a *App) Handler() http.Handler {
 	// wildcard sub-mount) so they take priority over the SPA/dev-proxy
 	// catch-all below, in both hosting modes, without shadowing unrelated
 	// paths. They deliberately sit outside /api's JSON/CSRF middleware.
+	// Reserve protocol paths even for wrong methods, disabled OIDC, or trailing
+	// segments so an OAuth request can never fall through to SPA HTML.
+	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS"} {
+		r.Handle(endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			if a.oidc == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Endpoint is disabled."}`))
+				return
+			}
+			w.Header().Set("Allow", methods)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Unsupported HTTP method."}`))
+		}))
+		r.Handle(endpoint+"/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Unknown protocol endpoint."}`))
+		}))
+	}
 	if a.oidc != nil {
 		r.Get("/.well-known/openid-configuration", a.oidc.DiscoveryHandler)
 		r.Get("/jwks", a.oidc.JWKSHandler)
 		r.Get("/authorize", a.oidc.AuthorizeHandler)
 		r.Post("/authorize", a.oidc.AuthorizeHandler)
-		r.Post("/token", oidc.WithCORS(a.oidc.TokenHandler))
-		r.Get("/userinfo", oidc.WithCORS(a.oidc.UserInfoHandler))
-		r.Post("/userinfo", oidc.WithCORS(a.oidc.UserInfoHandler))
-		r.Options("/token", oidc.CORSPreflight)
-		r.Options("/userinfo", oidc.CORSPreflight)
+		r.Post("/token", a.oidc.WithCORS(a.oidc.TokenHandler))
+		r.Get("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
+		r.Post("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
+		r.Options("/token", a.oidc.CORSPreflight)
+		r.Options("/userinfo", a.oidc.CORSPreflight)
 	}
 
 	if a.options.DevMode && strings.TrimSpace(a.cfg.UI.DevProxyURL) != "" {
