@@ -14,7 +14,7 @@ It targets whatever OpenID Connect server is **already running** at a URL you te
   bash scripts/run-server.sh
   ```
 
-  This builds the binary if needed, wipes `tests/.server-workspace/`, provisions a fresh admin + signing keys with `oidc.enabled`, `oidc.registrationEnabled`, and `oidc.allowedOrigins: [https://relying-party.test]` all on, and runs `serve` in the foreground on port 8099 (override with `E2E_PORT`). It prints the exact `export` lines to use in the next step. Leave it running in its own terminal.
+  This builds the binary if needed, wipes `tests/.server-workspace/`, provisions a fresh admin + signing keys with `oidc.enabled`, `oidc.registrationEnabled`, and `oidc.allowedOrigins` all on, runs `serve` in the foreground on port 8099 (override with `E2E_PORT`), and **writes `tests/.env`** with matching `E2E_BASE_URL`/`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` for you. Leave it running in its own terminal.
 
 ## Running the suite
 
@@ -23,9 +23,7 @@ cd tests
 npm install
 npx playwright install chromium   # first time only
 
-export E2E_BASE_URL="http://127.0.0.1:8099"       # wherever your server is
-export E2E_ADMIN_EMAIL="e2e-admin@example.test"    # a real active admin there
-export E2E_ADMIN_PASSWORD="e2e admin password not a real secret"
+cp .env.example .env   # then edit .env — skip this if scripts/run-server.sh already wrote one for you
 
 npm test              # headless
 npm run test:headed   # watch it drive a real browser
@@ -33,7 +31,7 @@ npm run test:ui       # Playwright's interactive UI mode
 npm run report         # open the HTML report from the last run
 ```
 
-If you used `scripts/run-server.sh`, it already printed those three `export` lines — copy them as-is.
+Configuration comes from `tests/.env` (never committed — `.env.example` is the tracked template), loaded automatically. A shell-exported `E2E_BASE_URL`/`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` always takes precedence over `.env`, so `E2E_BASE_URL=... npm test` still works for a one-off override without touching the file.
 
 ## What's checked before anything else
 
@@ -48,7 +46,9 @@ If you used `scripts/run-server.sh`, it already printed those three `export` lin
 
 ## Relying party mocking
 
-There's no real third-party relying party to redirect to. Redirect URIs use `https://relying-party.test`, an origin that never resolves on the network; Playwright's `page.route()` intercepts every request to it and fulfills a minimal stub page locally (see `fixtures/relying-party.ts`) — this is enough to observe the real final redirect (`code`/`state`/`error` in the URL) exactly as a real RP's callback page would receive it. The actual code-for-tokens exchange is modeled as a confidential client's **backend** would do it — a direct HTTP call via Playwright's `request` fixture, not browser JS — except in `public-client-cors.spec.ts`, which specifically tests a public-client SPA doing the exchange via `fetch()` from the mocked page itself, to exercise the server's CORS allowlist.
+There's no real third-party relying party to redirect to. Most specs use `https://relying-party.test`, an origin that never resolves on the network; Playwright's `page.route()` intercepts every request to it and fulfills a minimal stub page locally (see `fixtures/relying-party.ts`) — this is enough to observe the real final redirect (`code`/`state`/`error` in the URL) exactly as a real RP's callback page would receive it. The actual code-for-tokens exchange is modeled as a confidential client's **backend** would do it — a direct HTTP call via Playwright's `request` fixture, not browser JS.
+
+`public-client-cors.spec.ts` is the exception: it needs the browser to make a *real* outbound `fetch()` call, which a `page.route()`-mocked page cannot do (Chromium treats a fully synthetic response as having a restricted security context — confirmed empirically as "Failed to fetch"). That spec instead starts a real, minimal local HTTP server on a fixed loopback port (`fixtures/stub-callback-server.ts`) to serve its callback page, so the fetch is genuinely subject to the target server's CORS allowlist.
 
 ## Specs
 

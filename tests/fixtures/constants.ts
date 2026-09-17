@@ -3,10 +3,22 @@ import { fileURLToPath } from "node:url";
 
 const TESTS_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
+// Loads tests/.env if present (Node's built-in loader — no dependency
+// needed). Values already set in the shell environment take precedence, so
+// `E2E_BASE_URL=... npm test` still works without a .env file. Missing the
+// file entirely is fine — env vars set another way (CI, shell export) still
+// work.
+try {
+  process.loadEnvFile(path.join(TESTS_DIR, ".env"));
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+}
+
 // This suite never starts a server itself — it targets whatever instance is
 // already running at BASE_URL (your own `make dev`/`serve`, or a disposable
 // one you started yourself with `bash scripts/run-server.sh` in another
-// terminal). Point it elsewhere with E2E_BASE_URL.
+// terminal). Point it elsewhere with E2E_BASE_URL (tests/.env or the shell
+// environment).
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 
 // Must belong to a real active administrator on the target instance. There
@@ -19,8 +31,8 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(
-      `${name} is required. Point this suite at a real admin account on the target server: ` +
-        `E2E_BASE_URL=... E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npm test\n` +
+      `${name} is required. Copy tests/.env.example to tests/.env and fill in a real admin account on the target server ` +
+        `(or set E2E_BASE_URL/E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD in the shell environment).\n` +
         `See tests/README.md.`,
     );
   }

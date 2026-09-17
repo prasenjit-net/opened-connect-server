@@ -90,7 +90,7 @@ e2e-install:
 	cd $(E2E_DIR) && npm install && npx playwright install chromium
 
 e2e:
-	@echo "> Running e2e suite against $${E2E_BASE_URL:?set E2E_BASE_URL, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD — see tests/README.md}"
+	@echo "> Running e2e suite (reads $(E2E_DIR)/.env — see tests/README.md if it's missing)…"
 	cd $(E2E_DIR) && npm test
 
 clean:
@@ -114,4 +114,4 @@ help:
 	@echo ""
 	@echo "  e2e-server  Start a disposable server for the manual e2e suite (tests/)"
 	@echo "  e2e-install Install the e2e suite's dependencies (Playwright + browser)"
-	@echo "  e2e         Run the e2e suite (needs E2E_BASE_URL/E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD; see tests/README.md)"
+	@echo "  e2e         Run the e2e suite (reads tests/.env; see tests/README.md)"

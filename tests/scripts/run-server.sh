@@ -64,13 +64,16 @@ printf '%s' "$ADMIN_PASSWORD" | "$BIN" init \
   --admin-name "E2E Admin" \
   --password-stdin >&2
 
+cat > "$TESTS_DIR/.env" <<ENV
+E2E_BASE_URL=http://127.0.0.1:$PORT
+E2E_ADMIN_EMAIL=$ADMIN_EMAIL
+E2E_ADMIN_PASSWORD=$ADMIN_PASSWORD
+ENV
+
 cat >&2 <<EOF
 ==> Server starting on http://127.0.0.1:$PORT
-==> In another terminal, run the suite against it with:
+==> Wrote tests/.env — in another terminal, just run:
 
-    export E2E_BASE_URL="http://127.0.0.1:$PORT"
-    export E2E_ADMIN_EMAIL="$ADMIN_EMAIL"
-    export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
     npm test
 
 EOF
