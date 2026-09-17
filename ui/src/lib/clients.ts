@@ -8,6 +8,10 @@ export interface ClientMetadata {
  token_endpoint_auth_method?: string;
 }
 export interface OIDCClient extends ClientMetadata {
+ registration_origin?: string;
+ registration_initial_token_id?: string;
+ registration_token_active?: boolean;
+ registration_token_issued_at?: string;
  client_id: string;
  client_id_issued_at: number;
  updated_at: number;

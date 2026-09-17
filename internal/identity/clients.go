@@ -12,11 +12,13 @@ import (
 // including language-tagged display metadata such as client_name#fr.
 type ClientMetadata map[string]json.RawMessage
 type ClientRecord struct {
-	ID        string         `json:"id"`
-	Metadata  ClientMetadata `json:"metadata"`
-	Secret    string         `json:"secret,omitempty"`
-	IssuedAt  int64          `json:"issuedAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	Origin         string         `json:"origin,omitempty"`
+	InitialTokenID string         `json:"initialTokenId,omitempty"`
+	ID             string         `json:"id"`
+	Metadata       ClientMetadata `json:"metadata"`
+	Secret         string         `json:"secret,omitempty"`
+	IssuedAt       int64          `json:"issuedAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 type ClientView map[string]any
 type ClientList struct {
@@ -47,6 +49,13 @@ func cloneClient(c ClientRecord) ClientRecord {
 }
 func clientView(c ClientRecord) ClientView {
 	v := ClientView{"client_id": c.ID, "client_id_issued_at": c.IssuedAt, "updated_at": c.UpdatedAt.Unix(), "has_client_secret": c.Secret != ""}
+	v["registration_origin"] = "manual"
+	if c.Origin != "" {
+		v["registration_origin"] = c.Origin
+	}
+	if c.InitialTokenID != "" {
+		v["registration_initial_token_id"] = c.InitialTokenID
+	}
 	for k, value := range c.Metadata {
 		v[k] = append(json.RawMessage(nil), value...)
 	}
@@ -120,7 +129,7 @@ func (s *Service) GetClient(ctx context.Context, hash, id string) (ClientView, e
 		if err != nil {
 			return err
 		}
-		result = clientView(c)
+		result = adminClientView(tx, c)
 		return nil
 	})
 	return result, err
@@ -151,16 +160,10 @@ func (s *Service) SaveClient(ctx context.Context, hash, id string, input ClientM
 		issued := ""
 		if needsClientSecret(m) {
 			if c.Secret == "" {
-				// 512 bits also accommodates HS512 and symmetric encryption metadata.
-				a, e := randomToken()
-				if e != nil {
-					return e
+				c.Secret, err = newClientSecret()
+				if err != nil {
+					return err
 				}
-				b, e := randomToken()
-				if e != nil {
-					return e
-				}
-				c.Secret = a + b
 				issued = c.Secret
 			}
 		} else {
@@ -169,7 +172,7 @@ func (s *Service) SaveClient(ctx context.Context, hash, id string, input ClientM
 		c.Metadata = m
 		c.UpdatedAt = s.now().UTC()
 		tx.SaveClient(c)
-		result = clientView(c)
+		result = adminClientView(tx, c)
 		if issued != "" {
 			result["client_secret"] = issued
 		}
@@ -202,20 +205,39 @@ func (s *Service) RotateClientSecret(ctx context.Context, hash, id string) (Clie
 		if !needsClientSecret(c.Metadata) {
 			return ValidationError("This client does not use a client secret.")
 		}
-		a, err := randomToken()
+		c.Secret, err = newClientSecret()
 		if err != nil {
 			return err
 		}
-		b, err := randomToken()
-		if err != nil {
-			return err
-		}
-		c.Secret = a + b
 		c.UpdatedAt = s.now().UTC()
 		tx.SaveClient(c)
-		result = clientView(c)
+		result = adminClientView(tx, c)
 		result["client_secret"] = c.Secret
 		return nil
 	})
 	return result, err
+}
+
+func adminClientView(tx ReadTx, c ClientRecord) ClientView {
+	v := clientView(c)
+	v["registration_token_active"] = false
+	if token, err := tx.RegistrationToken(c.ID); err == nil {
+		v["registration_token_active"] = true
+		v["registration_token_issued_at"] = token.IssuedAt
+	}
+	return v
+}
+
+// 512 bits accommodates HS512 and symmetric encryption metadata accepted by
+// administrative registration as well as the dynamic registration profile.
+func newClientSecret() (string, error) {
+	a, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	b, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	return a + b, nil
 }

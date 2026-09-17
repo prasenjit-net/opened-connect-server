@@ -12,18 +12,20 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const currentVersion = 2
+const currentVersion = 3
 
 type FileStore struct{ path string }
 type fileState struct {
-	ClientsMap         map[string]ClientRecord      `json:"clients,omitempty"`
-	Version            int                          `json:"version"`
-	UsersMap           map[string]User              `json:"users"`
-	Sessions           map[string]Session           `json:"sessions"`
-	AuthzTransactions  map[string]AuthzTransaction  `json:"authzTransactions,omitempty"`
-	AuthorizationCodes map[string]AuthorizationCode `json:"authorizationCodes,omitempty"`
-	AccessTokens       map[string]AccessToken       `json:"accessTokens,omitempty"`
-	Consents           map[string]Consent           `json:"consents,omitempty"`
+	InitialTokenMap      map[string]InitialAccessToken      `json:"initialAccessTokens,omitempty"`
+	RegistrationTokenMap map[string]RegistrationAccessToken `json:"registrationAccessTokens,omitempty"`
+	ClientsMap           map[string]ClientRecord            `json:"clients,omitempty"`
+	Version              int                                `json:"version"`
+	UsersMap             map[string]User                    `json:"users"`
+	Sessions             map[string]Session                 `json:"sessions"`
+	AuthzTransactions    map[string]AuthzTransaction        `json:"authzTransactions,omitempty"`
+	AuthorizationCodes   map[string]AuthorizationCode       `json:"authorizationCodes,omitempty"`
+	AccessTokens         map[string]AccessToken             `json:"accessTokens,omitempty"`
+	Consents             map[string]Consent                 `json:"consents,omitempty"`
 }
 
 func NewFileStore(dir string) (*FileStore, error) {
@@ -89,10 +91,10 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 			return fmt.Errorf("unsupported or invalid identity store")
 		}
 		switch state.Version {
-		case 1:
-			// No data-shape change for the OIDC record maps added in version 2;
-			// they simply start empty below.
-			state.Version = 2
+		case 1, 2:
+			// Older stores gain empty protocol and registration maps; existing
+			// identities, client IDs, and encrypted secrets remain unchanged.
+			state.Version = currentVersion
 		case currentVersion:
 			// current
 		default:
@@ -257,7 +259,11 @@ func (s *fileState) SaveClient(c ClientRecord) {
 	}
 	s.ClientsMap[c.ID] = cloneClient(c)
 }
-func (s *fileState) DeleteClient(id string) { s.invalidateClientGrants(id); delete(s.ClientsMap, id) }
+func (s *fileState) DeleteClient(id string) {
+	s.DeleteRegistrationToken(id)
+	s.invalidateClientGrants(id)
+	delete(s.ClientsMap, id)
+}
 func (s *fileState) invalidateClientGrants(id string) {
 	s.RevokeAccessTokensForClient(id)
 	for k, c := range s.AuthorizationCodes {
@@ -417,3 +423,38 @@ func (s *fileState) ListConsents() []Consent {
 	}
 	return out
 }
+
+func (s *fileState) InitialTokens() []InitialAccessToken {
+	out := make([]InitialAccessToken, 0, len(s.InitialTokenMap))
+	for _, v := range s.InitialTokenMap {
+		out = append(out, v)
+	}
+	return out
+}
+func (s *fileState) InitialToken(hash string) (InitialAccessToken, error) {
+	v, ok := s.InitialTokenMap[hash]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return v, nil
+}
+func (s *fileState) SaveInitialToken(v InitialAccessToken) {
+	if s.InitialTokenMap == nil {
+		s.InitialTokenMap = map[string]InitialAccessToken{}
+	}
+	s.InitialTokenMap[v.Hash] = v
+}
+func (s *fileState) RegistrationToken(id string) (RegistrationAccessToken, error) {
+	v, ok := s.RegistrationTokenMap[id]
+	if !ok {
+		return v, ErrNotFound
+	}
+	return v, nil
+}
+func (s *fileState) SaveRegistrationToken(v RegistrationAccessToken) {
+	if s.RegistrationTokenMap == nil {
+		s.RegistrationTokenMap = map[string]RegistrationAccessToken{}
+	}
+	s.RegistrationTokenMap[v.ClientID] = v
+}
+func (s *fileState) DeleteRegistrationToken(id string) { delete(s.RegistrationTokenMap, id) }

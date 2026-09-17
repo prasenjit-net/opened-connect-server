@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import ActivityNavigation from "../components/ActivityNavigation";
 import { api, ApiError } from "../lib/api";
-import { activityKinds, activityLabels, type ActivityKind, type ActivityRecord } from "../lib/activity";
+import { activityLabels, type ActivityKind, type ActivityRecord } from "../lib/activity";
 import ActivityTable from "../components/ActivityTable";
 import { useToast } from "../context/ToastContext";
 
@@ -31,7 +31,7 @@ export default function ActivityPage({ kind }: { kind: ActivityKind }) {
  } });
  const result = query.data; const pages = Math.max(1, Math.ceil((result?.total ?? 0) / 10));
  return <div className="flex flex-col gap-4">
-  <div className="flex flex-wrap gap-2" aria-label="Activity categories">{activityKinds.map(k => <Link key={k} to={`/activity/${k}`} className={`btn ${kind === k ? "btn-primary" : "btn-secondary"}`}>{activityLabels[k]}</Link>)}</div>
+  <ActivityNavigation current={kind} />
   <p className="text-sm text-ink-muted">Monitor retained {activityLabels[kind].toLowerCase()}. Refreshes every 15 seconds. Expired records are periodically removed; these results are not a complete audit history.</p>
   {kind === "tokens" && <p className="text-sm text-ink-muted">Access tokens can be revoked. Signed ID tokens cannot be recalled; their expiry is shown in record details when available.</p>}
   <section className="card">

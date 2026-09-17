@@ -290,3 +290,67 @@ The service rechecks admin authorization within the storage transaction. Respons
 Only active items can be revoked. Consumed codes, completed transactions, expired records, and obsolete consents have no revocation action; the API rechecks eligibility atomically and returns HTTP 409 if an item is no longer active. Revoking an active transaction cancels it; revoking an unused code prevents exchange. Revoking an access token blocks further UserInfo use. Revoking consent cancels current transactions, codes, and tokens for that user/client only; subsequent authorization requires a new consent decision. These mutations are atomic with protocol issuance; retries on an already-revoked record are harmless. Consent revocation preserves consumed/completed/expired history while cancelling active grants. Already-delivered signed ID tokens cannot be recalled; newly issued tokens record the ID-token expiry for display in record details.
 
 This is a view of retained protocol state, not a permanent audit log. Normal expiry cleanup and account/client security changes can remove records. Counts are current retained totals rather than lifetime traffic totals. Older records without creation or ID-token-expiry metadata display an unavailable timestamp.
+
+### Dynamic client registration
+
+Dynamic registration is disabled by default. Enable the provider and set
+`oidc.registrationEnabled: true` in server configuration. Discovery then publishes
+`registration_endpoint`. Use HTTPS; loopback HTTP is only for development/tests.
+
+On the **Clients** list, admins can open **Issue initial access token** to create
+an invitation in a modal. Monitor tokens under **Activity → Initial access tokens**,
+with an automatically loaded first page, 15-second refresh, 10 results per page,
+and revocation of unused capacity. Search filters apply when Search is clicked. An invitation
+allows one registration and expires after 24 hours by default. Admins may choose
+1–100 registrations and 1–720 hours. Tokens are displayed once and stored only as
+hashes. No anonymous registration is supported.
+
+Send `POST /register` with `Content-Type: application/json` and
+`Authorization: Bearer <initial-access-token>`, for example this body:
+
+```json
+{
+  "client_name": "Example application",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+Use `none` for a public client using PKCE, or `client_secret_basic` (the default)
+/ `client_secret_post` for a confidential client. The 201 response includes the
+client ID, effective metadata, a secret when applicable, and a per-client
+`registration_access_token` with its `registration_client_uri`. The registered
+client can use the existing authorization-code flow immediately. Unknown
+extension metadata is ignored; invalid or runtime-incompatible requirements are
+rejected rather than silently weakened. Request objects, nonempty default ACR
+values, sector-identifier validation, pairwise subjects, JWT client authentication,
+and token encryption are not supported by dynamic registration.
+
+Use `GET` on the returned configuration URI with the registration access token.
+This read includes the current client secret when present: protect the registration
+token as carefully as that secret. Configuration tokens do not expire automatically;
+admins can replace or revoke them from client detail. Replacement does not change
+the client secret or revoke user grants. Deleting a client invalidates its
+configuration token and protocol grants. Initial-token revocation only stops
+future registrations; it does not invalidate clients already created.
+
+Client registration and configuration tokens cannot authorize user/admin APIs,
+UserInfo, or token issuance. Browser sessions and ordinary OAuth access tokens
+cannot authorize registration/configuration endpoints. Responses are `no-store`;
+secrets are never included in admin inventory responses. CORS uses the existing
+`oidc.allowedOrigins` allowlist without cookie credentials. Per-process limits are
+240 registration/configuration requests per source and 120 per credential per
+minute; apply additional edge limits for multi-instance deployments. Storage
+transactions enforce initial-token quotas across processes sharing local data.
+
+Disabling `oidc.registrationEnabled` stops new registrations and removes the
+endpoint from discovery; existing configuration reads and login flows continue.
+Disabling OIDC disables all protocol routes. A lost POST response may already
+have consumed an invitation; inspect the client inventory and rotate/recover
+credentials instead of blindly retrying registration.
+
+Implemented: the OIDC registration and configuration-read profile described in
+[DYNAMIC_CLIENT_REGISTRATION_PLAN.md](DYNAMIC_CLIENT_REGISTRATION_PLAN.md).
+RFC 7592 self-service update/delete remains an optional later phase; those methods
+return 405. Admins continue updating and deleting clients through `/api/admin/clients`.
+This is not a claim of full OpenID conformance certification.

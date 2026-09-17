@@ -1,3 +1,4 @@
+import ClientRegistrationAccess from "../components/ClientRegistrationAccess";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -46,6 +47,8 @@ export default function ClientDetailPage() {
    <section className="card">
     <h2 className="break-words text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
     <p className="mt-2 break-all font-mono text-sm">Client ID: {query.data.client_id}</p>
+    <p className="mt-2 text-sm text-ink-muted">Registration: {query.data.registration_origin === "dynamic" ? "Dynamic" : "Manual"}</p>
+    {query.data.registration_initial_token_id && <p className="mt-2 break-all text-xs text-ink-muted">Initial token ID: {query.data.registration_initial_token_id}</p>}
     <p className="mt-2 text-xs text-ink-faint">Created {new Date(query.data.client_id_issued_at*1000).toLocaleString()} · Updated {new Date(query.data.updated_at*1000).toLocaleString()}</p>
    </section>
    {!query.data.protocol_compatible && <section role="alert" className="card border border-warn">
@@ -62,6 +65,7 @@ export default function ClientDetailPage() {
     <button className="btn btn-secondary mt-3" onClick={() => setSecret(null)}>Dismiss secret</button>
    </section>}
    <ClientEditor key={clientId} client={query.data} onSave={save} onCancel={() => { void navigate({ to: "/clients" }); }} />
+   <ClientRegistrationAccess key={`registration-${clientId}`} clientId={clientId} active={query.data.registration_token_active === true} onChanged={(active) => cache.setQueryData(["client", clientId], { ...query.data, registration_token_active: active })} />
    <section className="card">
     <h2 className="mb-3 font-semibold">Client credentials and deletion</h2>
     <p className="mb-3 text-sm text-ink-muted">{query.data.has_client_secret ? "A client secret is configured and does not expire. Rotation immediately replaces it." : "This client does not use a shared secret."}</p>

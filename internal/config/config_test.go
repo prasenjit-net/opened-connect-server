@@ -151,3 +151,29 @@ func TestOIDCAllowedOriginsValidation(t *testing.T) {
 		t.Fatal("allowed origins not loaded")
 	}
 }
+
+func TestDynamicRegistrationConfiguration(t *testing.T) {
+	v := viper.New()
+	SetDefaults(v)
+	cfg, err := Load(v)
+	if err != nil || cfg.OIDC.RegistrationEnabled {
+		t.Fatal("registration should default to disabled")
+	}
+	v.Set("oidc.registrationEnabled", true)
+	if _, err = Load(v); err == nil {
+		t.Fatal("registration enabled without provider")
+	}
+	v.Set("oidc.enabled", true)
+	if _, err = Load(v); err != nil {
+		t.Fatal("loopback development registration rejected", err)
+	}
+	v.Set("oidc.issuer", "http://insecure.example.com")
+	if _, err = Load(v); err == nil {
+		t.Fatal("insecure non-loopback registration accepted")
+	}
+	v.Set("oidc.issuer", "https://issuer.example.com")
+	cfg, err = Load(v)
+	if err != nil || !cfg.OIDC.RegistrationEnabled {
+		t.Fatal("HTTPS registration rejected", err)
+	}
+}

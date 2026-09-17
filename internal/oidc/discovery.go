@@ -14,6 +14,7 @@ import (
 // default (request_parameter_supported, request_uri_parameter_supported,
 // require_request_uri_registration, claims_parameter_supported).
 type discoveryDocument struct {
+	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
@@ -45,7 +46,12 @@ var supportedClaims = []string{
 
 func (s *Service) discoveryDocument() discoveryDocument {
 	issuer := s.Config.Issuer
+	registrationEndpoint := ""
+	if s.Config.RegistrationEnabled {
+		registrationEndpoint = issuer + "/register"
+	}
 	return discoveryDocument{
+		RegistrationEndpoint:              registrationEndpoint,
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             issuer + "/authorize",
 		TokenEndpoint:                     issuer + "/token",

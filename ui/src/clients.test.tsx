@@ -26,7 +26,7 @@ beforeEach(() => {
  vi.spyOn(api,"client").mockResolvedValue(client);
 });
 describe("client management", () => {
- it.each(["/clients","/clients/new","/clients/portal-id"])("blocks regular users at %s and hides Clients navigation", async (path) => {
+ it.each(["/clients","/clients/new","/clients/portal-id","/clients/registration","/activity/initial-access-tokens"])("blocks regular users at %s and hides Clients navigation", async (path) => {
   vi.mocked(api.session).mockResolvedValue({ user: { ...admin,role:"user" }, csrfToken:"csrf", expiresAt:new Date(Date.now()+3600000).toISOString() });
   setup(path);
   expect(await screen.findByRole("heading",{ name:"Access denied" })).toBeInTheDocument();

@@ -1,3 +1,4 @@
+import type { InitialToken, InitialTokenList, RegistrationSettings } from "./registration";
 import type { ActivityKind, ActivityList, ActivityOverview } from "./activity";
 import type { ClientMetadata, ClientList, ClientResult, OIDCClient } from "./clients";
 import type { TransactionView } from "./oidc";
@@ -90,6 +91,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+ registrationSettings: () => request<RegistrationSettings>("/api/admin/registration"),
+ registrationTokens: (q: string, page: number) => request<InitialTokenList>(`/api/admin/registration-tokens?${new URLSearchParams({q, page: String(page)})}`),
+ issueRegistrationToken: (input: { label: string; maxUses: number; lifetimeHours: number }) => request<{credential: InitialToken; token: string}>("/api/admin/registration-tokens", {method: "POST", body: JSON.stringify(input)}),
+ revokeRegistrationToken: (id: string) => request<void>(`/api/admin/registration-tokens/${encodeURIComponent(id)}/revoke`, {method: "POST", body: "{}"}),
+ issueClientRegistrationToken: (id: string) => request<{token: string}>(`/api/admin/clients/${encodeURIComponent(id)}/registration-token`, {method: "POST", body: "{}"}),
+ revokeClientRegistrationToken: (id: string) => request<void>(`/api/admin/clients/${encodeURIComponent(id)}/registration-token`, {method: "DELETE"}),
   activity: (kind: ActivityKind, params: { q: string; status: string; page: number }, signal?: AbortSignal) => request<ActivityList>(`/api/admin/activity/${kind}?${new URLSearchParams({ ...params, page: String(params.page) })}`, { signal }),
   activityOverview: (signal?: AbortSignal) => request<ActivityOverview>("/api/admin/activity/overview", { signal }),
   revokeActivity: (kind: ActivityKind, id: string) => request<void>(`/api/admin/activity/${kind}/${encodeURIComponent(id)}/revoke`, { method: "POST", body: "{}" }),

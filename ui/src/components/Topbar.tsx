@@ -19,6 +19,7 @@ const TITLES: Record<string, string> = {
   "/clients": "Clients",
   "/clients/": "Clients",
   "/clients/new": "Add client",
+  "/activity/initial-access-tokens": "Initial access tokens",
 };
 
 export default function Topbar({ onMenu }: { onMenu: () => void }) {

@@ -62,6 +62,7 @@ type UIConfig struct {
 // RefreshInactivityTTL are reserved for the future refresh-token milestone
 // and are not yet enforced.
 type OIDCConfig struct {
+	RegistrationEnabled  bool          `mapstructure:"registrationEnabled" yaml:"registrationEnabled"`
 	AllowedOrigins       []string      `mapstructure:"allowedOrigins" yaml:"allowedOrigins"`
 	Enabled              bool          `mapstructure:"enabled" yaml:"enabled"`
 	Issuer               string        `mapstructure:"issuer" yaml:"issuer"`
@@ -147,6 +148,7 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("ui.repoURL", defaults.UI.RepoURL)
 
 	v.SetDefault("oidc.enabled", defaults.OIDC.Enabled)
+	v.SetDefault("oidc.registrationEnabled", false)
 	v.SetDefault("oidc.issuer", defaults.OIDC.Issuer)
 	v.SetDefault("oidc.transactionTTL", defaults.OIDC.TransactionTTL)
 	v.SetDefault("oidc.codeTTL", defaults.OIDC.CodeTTL)
@@ -186,6 +188,9 @@ func Load(v *viper.Viper) (Config, error) {
 		}
 		cfg.Auth.CookieSecure = true
 	}
+	if cfg.OIDC.RegistrationEnabled && !cfg.OIDC.Enabled {
+		return Config{}, fmt.Errorf("oidc.registrationEnabled requires oidc.enabled")
+	}
 	if cfg.OIDC.Enabled {
 		if strings.TrimSpace(cfg.OIDC.Issuer) == "" {
 			cfg.OIDC.Issuer = cfg.App.URL
@@ -198,6 +203,9 @@ func Load(v *viper.Viper) (Config, error) {
 		}
 		if issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || strings.Contains(cfg.OIDC.Issuer, "#") {
 			return Config{}, fmt.Errorf("oidc.issuer must not contain user information, a query, or a fragment")
+		}
+		if cfg.OIDC.RegistrationEnabled && issuer.Scheme == "http" && issuer.Hostname() != "localhost" && issuer.Hostname() != "127.0.0.1" && issuer.Hostname() != "::1" {
+			return Config{}, fmt.Errorf("dynamic registration requires HTTPS or an explicit loopback development issuer")
 		}
 		cfg.OIDC.Issuer = strings.TrimSuffix(cfg.OIDC.Issuer, "/")
 		if issuer.RawPath != "" || (issuer.Path != "" && issuer.Path != "/") {
@@ -298,6 +306,7 @@ ui:
 
 # oidc:
 #   enabled: false
+#   registrationEnabled: false # token-protected dynamic client registration
 #   issuer: https://identity.example.com # defaults to app.url when unset
 #   allowedOrigins: [] # exact browser client origins, e.g. [https://app.example.com]
 #   transactionTTL: 10m

@@ -11,12 +11,14 @@ import (
 // runtime. It mirrors config.OIDCConfig but lives here so this package
 // doesn't depend on internal/config for its core logic.
 type Config struct {
-	AllowedOrigins []string
-	Issuer         string
-	TransactionTTL time.Duration
-	CodeTTL        time.Duration
-	AccessTokenTTL time.Duration
-	IDTokenTTL     time.Duration
+	RegistrationEnabled   bool
+	RegistrationAllowHTTP bool
+	AllowedOrigins        []string
+	Issuer                string
+	TransactionTTL        time.Duration
+	CodeTTL               time.Duration
+	AccessTokenTTL        time.Duration
+	IDTokenTTL            time.Duration
 	// CookieSecure mirrors config.AuthConfig.CookieSecure: whether the
 	// authorization-binding cookie must carry the Secure attribute.
 	CookieSecure bool

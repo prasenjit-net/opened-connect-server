@@ -65,6 +65,9 @@ type Session struct {
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	InitialTokens() []InitialAccessToken
+	InitialToken(hash string) (InitialAccessToken, error)
+	RegistrationToken(clientID string) (RegistrationAccessToken, error)
 	ListAuthzTransactions() []AuthzTransaction
 	ListAuthorizationCodes() []AuthorizationCode
 	ListAccessTokens() []AccessToken
@@ -86,7 +89,12 @@ type ReadTx interface {
 // SaveUser on password/email/role/active changes, DeleteUser and
 // DeleteUserSessions invalidate the user's same protocol state as well as sessions.
 // SaveClient must advance UpdatedAt monotonically, even with an unchanged clock.
+// DeleteClient must also delete its registration access token. Registration-token
+// replacement is independent of SaveClient and must not invalidate user grants.
 type Tx interface {
+	SaveInitialToken(InitialAccessToken)
+	SaveRegistrationToken(RegistrationAccessToken)
+	DeleteRegistrationToken(clientID string)
 	SaveClient(ClientRecord)
 	DeleteClient(id string)
 	ReadTx

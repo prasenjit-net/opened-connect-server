@@ -65,13 +65,15 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 			return nil, fmt.Errorf("load signing keys: %w", err)
 		}
 		app.oidc = oidc.New(auth, store, keys, oidc.Config{
-			Issuer:         cfg.OIDC.Issuer,
-			AllowedOrigins: cfg.OIDC.AllowedOrigins,
-			TransactionTTL: cfg.OIDC.TransactionTTL,
-			CodeTTL:        cfg.OIDC.CodeTTL,
-			AccessTokenTTL: cfg.OIDC.AccessTokenTTL,
-			IDTokenTTL:     cfg.OIDC.IDTokenTTL,
-			CookieSecure:   cfg.Auth.CookieSecure,
+			RegistrationEnabled:   cfg.OIDC.RegistrationEnabled,
+			RegistrationAllowHTTP: cfg.App.Env == "development" || cfg.App.Env == "test",
+			Issuer:                cfg.OIDC.Issuer,
+			AllowedOrigins:        cfg.OIDC.AllowedOrigins,
+			TransactionTTL:        cfg.OIDC.TransactionTTL,
+			CodeTTL:               cfg.OIDC.CodeTTL,
+			AccessTokenTTL:        cfg.OIDC.AccessTokenTTL,
+			IDTokenTTL:            cfg.OIDC.IDTokenTTL,
+			CookieSecure:          cfg.Auth.CookieSecure,
 		})
 	}
 	return app, nil
@@ -101,7 +103,7 @@ func (a *App) Handler() http.Handler {
 	// paths. They deliberately sit outside /api's JSON/CSRF middleware.
 	// Reserve protocol paths even for wrong methods, disabled OIDC, or trailing
 	// segments so an OAuth request can never fall through to SPA HTML.
-	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS"} {
+	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/register/{clientID}": "GET, OPTIONS"} {
 		r.Handle(endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
@@ -129,6 +131,10 @@ func (a *App) Handler() http.Handler {
 		r.Post("/token", a.oidc.WithCORS(a.oidc.TokenHandler))
 		r.Get("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
 		r.Post("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
+		r.Post("/register", a.oidc.WithCORS(a.oidc.RegistrationHandler))
+		r.Get("/register/{clientID}", a.oidc.WithCORS(a.oidc.RegistrationReadHandler))
+		r.Options("/register", a.oidc.CORSPreflight)
+		r.Options("/register/{clientID}", a.oidc.CORSPreflight)
 		r.Options("/token", a.oidc.CORSPreflight)
 		r.Options("/userinfo", a.oidc.CORSPreflight)
 	}
