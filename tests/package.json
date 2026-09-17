@@ -1,0 +1,19 @@
+{
+  "name": "opened-connect-server-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Manual-only Playwright end-to-end suite for the OpenID Connect provider. Not part of CI/CD.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.10.2",
+    "jose": "^5.9.6",
+    "typescript": "^5.7.2"
+  }
+}

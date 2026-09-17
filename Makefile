@@ -1,6 +1,7 @@
 BINARY := opened-connect-server
 BUILD_DIR := build
 UI_DIR := ui
+E2E_DIR := tests
 GO := go
 GO_PACKAGES := $(shell go list ./... | grep -v '/ui/' || true)
 
@@ -15,7 +16,7 @@ LD_FLAGS := -s -w \
 	-X github.com/prasenjit-net/opened-connect-server/internal/version.Commit=$(COMMIT) \
 	-X github.com/prasenjit-net/opened-connect-server/internal/version.BuildDate=$(BUILD_DATE)
 
-.PHONY: all build build-ui build-go run dev dev-ui dev-all test test-ui lint lint-ui fmt install-deps clean init help
+.PHONY: all build build-ui build-go run dev dev-ui dev-all test test-ui lint lint-ui fmt install-deps clean init help e2e-server e2e-install e2e
 
 all: build
 
@@ -79,6 +80,19 @@ install-deps:
 init:
 	$(GO) run . init $(if $(CONFIG),--config $(CONFIG),)
 
+# --- Manual-only e2e suite (never run by CI; see tests/README.md) ---
+e2e-server:
+	@echo "> Starting a disposable e2e server (leave this running)…"
+	cd $(E2E_DIR) && bash scripts/run-server.sh
+
+e2e-install:
+	@echo "> Installing e2e suite dependencies…"
+	cd $(E2E_DIR) && npm install && npx playwright install chromium
+
+e2e:
+	@echo "> Running e2e suite against $${E2E_BASE_URL:?set E2E_BASE_URL, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD — see tests/README.md}"
+	cd $(E2E_DIR) && npm test
+
 clean:
 	rm -rf $(BUILD_DIR) $(UI_DIR)/node_modules coverage.out coverage.html
 	find $(UI_DIR)/dist -mindepth 1 ! -name '.gitkeep' -delete
@@ -97,3 +111,7 @@ help:
 	@echo "  lint        Run go vet"
 	@echo "  lint-ui     Run frontend lint"
 	@echo "  install-deps Install Go and UI dependencies"
+	@echo ""
+	@echo "  e2e-server  Start a disposable server for the manual e2e suite (tests/)"
+	@echo "  e2e-install Install the e2e suite's dependencies (Playwright + browser)"
+	@echo "  e2e         Run the e2e suite (needs E2E_BASE_URL/E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD; see tests/README.md)"
