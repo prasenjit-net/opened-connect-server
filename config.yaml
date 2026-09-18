@@ -34,6 +34,8 @@ oidc:
   refreshMaxTTL: 720h
   refreshInactivityTTL: 168h
   registrationEnabled: true
+  allowedOrigins:
+    - http://127.0.0.1:9999
 
 oauth:
   refreshTokensEnabled: true
