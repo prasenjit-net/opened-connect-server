@@ -29,3 +29,11 @@ describe("client metadata controls", () => {
   expect(save).not.toHaveBeenCalled();
  });
 });
+
+it("creates an OAuth-only client without redirects or response types", async () => {
+ const save = vi.fn().mockResolvedValue(undefined); render(<ClientEditor onSave={save} onCancel={vi.fn()} />);
+ await userEvent.selectOptions(screen.getByRole("combobox", { name: /Client purpose/ }), "oauth");
+ expect(screen.queryByRole("textbox", { name: "Redirect URIs" })).not.toBeInTheDocument();
+ await userEvent.click(screen.getByRole("button", { name: "Create client" }));
+ await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ grant_types: ["client_credentials"], response_types: [], redirect_uris: [] })));
+});

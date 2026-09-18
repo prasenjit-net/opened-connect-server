@@ -1,7 +1,8 @@
-export const activityKinds = ["transactions", "codes", "tokens", "consents"] as const;
+export const activityKinds = ["transactions", "codes", "tokens", "consents", "refresh"] as const;
 export type ActivityKind = typeof activityKinds[number];
-export const activityLabels: Record<ActivityKind, string> = { transactions: "Transactions", codes: "Authorization codes", tokens: "Access tokens", consents: "Consents" };
+export const activityLabels: Record<ActivityKind, string> = { transactions: "Transactions", codes: "Authorization codes", tokens: "Access tokens", consents: "Consents", refresh: "Refresh tokens" };
 export interface ActivityRecord {
+ grantType?: string; audience?: string; subjectKind?: string; familyId?: string; absoluteExpiry?: string; idleExpiry?: string;
  id: string; kind: ActivityKind; status: string; clientId: string; clientName: string;
  userId?: string; userName?: string; userEmail?: string; scopes: string[];
  createdAt: string | null; expiresAt: string | null; idTokenExpiresAt?: string; canRevoke: boolean;

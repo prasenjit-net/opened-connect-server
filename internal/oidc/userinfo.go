@@ -43,17 +43,11 @@ func (s *Service) UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		if rec.Revoked || !s.Now().Before(rec.ExpiresAt) || rec.Audience != "userinfo" || !slices.Contains(rec.Scopes, "openid") {
-			return nil
-		}
-		client, err := tx.Client(rec.ClientID)
-		if errors.Is(err, identity.ErrNotFound) {
-			return nil
-		}
+		active, err := identity.AccessTokenActive(tx, rec, s.Now(), s.Config.Resources)
 		if err != nil {
 			return err
 		}
-		if !identity.RuntimeClient(client).Compatible || client.UpdatedAt.After(rec.IssuedAt) {
+		if !active || rec.Audience != "userinfo" || rec.UserID == "" || !slices.Contains(rec.Scopes, "openid") {
 			return nil
 		}
 		user, err := tx.User(rec.UserID)

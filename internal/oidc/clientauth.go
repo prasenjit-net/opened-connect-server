@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrClientAuthRequired = errors.New("client authentication required")
-	ErrClientAuthInvalid  = errors.New("invalid client credentials")
-	ErrClientAuthConflict = errors.New("multiple client authentication methods presented")
-	ErrClientAuthLimited  = errors.New("too many client authentication attempts")
+	ErrClientAuthUnavailable = errors.New("client store unavailable")
+	ErrClientAuthRequired    = errors.New("client authentication required")
+	ErrClientAuthInvalid     = errors.New("invalid client credentials")
+	ErrClientAuthConflict    = errors.New("multiple client authentication methods presented")
+	ErrClientAuthLimited     = errors.New("too many client authentication attempts")
 )
 
 type presentedClientAuth struct {
@@ -81,7 +82,10 @@ func (s *Service) authenticateClient(r *http.Request, form url.Values) (identity
 		return identity.ProtocolClient{}, ErrClientAuthLimited
 	}
 	client, err := s.Identity.ProtocolClient(r.Context(), presented.clientID)
-	if err != nil || !client.Compatible || client.TokenEndpointAuthMethod != presented.method {
+	if err != nil && !errors.Is(err, identity.ErrNotFound) {
+		return identity.ProtocolClient{}, ErrClientAuthUnavailable
+	}
+	if err != nil || client.TokenEndpointAuthMethod != presented.method {
 		s.clientAuthLimiter.allow(bucket)
 		return identity.ProtocolClient{}, ErrClientAuthInvalid
 	}

@@ -35,6 +35,7 @@ test.describe("dynamic client registration", () => {
     expect(registerRes.status(), await registerRes.text()).toBe(201);
     const registered = await registerRes.json();
     expect(registered.client_id).toBeTruthy();
+    admin.trackRegisteredClient(registered.client_id);
     expect(registered.registration_access_token).toBeTruthy();
     expect(registered.registration_client_uri).toBe(`${BASE_URL}/register/${registered.client_id}`);
     // Public client: no secret should ever be issued.

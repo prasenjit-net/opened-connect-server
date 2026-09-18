@@ -9,7 +9,7 @@ import "slices"
 var (
 	SupportedScopes        = []string{"openid", "profile", "email", "address", "phone"}
 	SupportedResponseTypes = []string{"code"}
-	SupportedGrantTypes    = []string{"authorization_code"}
+	SupportedGrantTypes    = []string{"authorization_code", "client_credentials", "refresh_token", "password"}
 	SupportedAuthMethods   = []string{"client_secret_basic", "client_secret_post", "none"}
 	SupportedSubjectTypes  = []string{"public"}
 	SupportedSigningAlgs   = []string{"RS256"}
@@ -39,7 +39,7 @@ func Audit(p ClientProfile) (compatible bool, reasons []string) {
 	}
 	for _, gt := range p.GrantTypes {
 		if !slices.Contains(SupportedGrantTypes, gt) {
-			reasons = append(reasons, "grant type \""+gt+"\" is not supported; only \"authorization_code\" is implemented")
+			reasons = append(reasons, "grant type \""+gt+"\" is not supported")
 		}
 	}
 	if method := p.TokenEndpointAuthMethod; method != "" && !slices.Contains(SupportedAuthMethods, method) {

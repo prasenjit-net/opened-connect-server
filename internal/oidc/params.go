@@ -11,6 +11,8 @@ import (
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 )
 
+var errMultipleResources = errors.New("multiple resources are not supported")
+
 const maxProtocolRequestBytes = 16 * 1024
 
 // Parse exactly one bounded parameter source and reject ambiguous encoding.
@@ -36,8 +38,11 @@ func parseProtocolForm(r *http.Request) (url.Values, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, values := range params {
+	for key, values := range params {
 		if len(values) != 1 {
+			if key == "resource" {
+				return nil, errMultipleResources
+			}
 			return nil, errors.New("duplicate parameter")
 		}
 	}

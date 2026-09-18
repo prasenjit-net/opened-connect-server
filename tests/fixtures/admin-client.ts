@@ -1,3 +1,4 @@
+import type { OAuthPolicy, OAuthSettings } from "./oauth";
 import { request, type APIRequestContext } from "@playwright/test";
 import fs from "node:fs";
 import { ADMIN_CSRF_PATH, ADMIN_STORAGE_STATE_PATH, BASE_URL } from "./constants";
@@ -33,6 +34,10 @@ export interface ActivityRecord {
  * specs must not assume another spec file's fixtures still exist.
  */
 export class AdminClient {
+  private readonly ownedClients = new Set<string>();
+  private readonly ownedUsers = new Set<string>();
+  private readonly ownedInitialTokens = new Set<string>();
+
   private constructor(
     private readonly ctx: APIRequestContext,
     private readonly csrfToken: string,
@@ -45,7 +50,21 @@ export class AdminClient {
   }
 
   async dispose() {
-    await this.ctx.dispose();
+    const failures: string[] = [];
+    try {
+      for (const id of this.ownedInitialTokens) {
+        const res = await this.ctx.post(`/api/admin/registration-tokens/${encodeURIComponent(id)}/revoke`, { headers: this.headers(), data: {} });
+        // Consumed/expired invitations have no remaining registration authority.
+        if (![204, 404, 409].includes(res.status())) failures.push(`registration token ${id}: ${res.status()}`);
+      }
+      for (const [kind, ids] of [["clients", this.ownedClients], ["users", this.ownedUsers]] as const) {
+        for (const id of ids) {
+          const res = await this.ctx.delete(`/api/admin/${kind}/${encodeURIComponent(id)}`, { headers: this.headers() });
+          if (![204, 404].includes(res.status())) failures.push(`${kind}/${id}: ${res.status()}`);
+        }
+      }
+    } finally { await this.ctx.dispose(); }
+    if (failures.length) throw new Error(`Test fixture cleanup failed: ${failures.join(", ")}`);
   }
 
   private headers() {
@@ -60,13 +79,20 @@ export class AdminClient {
       data: { name: input.name, email: input.email, password: input.password, role: input.role ?? "user", active: true },
     });
     if (res.status() !== 201) throw new Error(`createUser failed: ${res.status()} ${await res.text()}`);
-    return (await res.json()) as { id: string; email: string };
+    const user = await res.json() as { id: string; email: string };
+    this.ownedUsers.add(user.id);
+    return user;
   }
+
+  /** Only adopt a client returned by this test's successful /register call. */
+  trackRegisteredClient(id: string) { this.ownedClients.add(id); }
 
   async createClient(metadata: Record<string, unknown>): Promise<ClientView> {
     const res = await this.ctx.post("/api/admin/clients", { headers: this.headers(), data: metadata });
     if (res.status() !== 201) throw new Error(`createClient failed: ${res.status()} ${await res.text()}`);
-    return (await res.json()) as ClientView;
+    const client = await res.json() as ClientView;
+    this.ownedClients.add(client.client_id);
+    return client;
   }
 
   async updateClient(clientId: string, metadata: Record<string, unknown>): Promise<ClientView> {
@@ -80,6 +106,22 @@ export class AdminClient {
     if (res.status() !== 204) throw new Error(`deleteClient failed: ${res.status()} ${await res.text()}`);
   }
 
+  async oauthSettings(): Promise<OAuthSettings> {
+    const res = await this.ctx.get("/api/admin/oauth");
+    if (res.status() !== 200) throw new Error(`OAuth settings failed: ${res.status()} ${await res.text()}`);
+    return res.json();
+  }
+
+  async setOAuthPolicy(id: string, policy: OAuthPolicy): Promise<void> {
+    const res = await this.ctx.put(`/api/admin/clients/${encodeURIComponent(id)}/oauth-policy`, { headers: this.headers(), data: policy });
+    if (res.status() !== 200) throw new Error(`OAuth policy failed: ${res.status()} ${await res.text()}`);
+  }
+
+  async setOAuthAccess(id: string, access: Record<string, string[]>): Promise<void> {
+    const res = await this.ctx.put(`/api/admin/users/${encodeURIComponent(id)}/oauth-access`, { headers: this.headers(), data: access });
+    if (res.status() !== 200) throw new Error(`OAuth access failed: ${res.status()} ${await res.text()}`);
+  }
+
   async registrationSettings(): Promise<{ enabled: boolean; endpoint?: string }> {
     const res = await this.ctx.get("/api/admin/registration");
     if (res.status() !== 200) throw new Error(`registrationSettings failed: ${res.status()} ${await res.text()}`);
@@ -89,7 +131,9 @@ export class AdminClient {
   async issueInitialAccessToken(input: { label: string; maxUses?: number; lifetimeHours?: number }): Promise<InitialAccessTokenResult> {
     const res = await this.ctx.post("/api/admin/registration-tokens", { headers: this.headers(), data: input });
     if (res.status() !== 201) throw new Error(`issueInitialAccessToken failed: ${res.status()} ${await res.text()}`);
-    return (await res.json()) as InitialAccessTokenResult;
+    const result = await res.json() as InitialAccessTokenResult;
+    this.ownedInitialTokens.add(result.credential.id);
+    return result;
   }
 
   async issueClientRegistrationToken(clientId: string): Promise<string> {
@@ -105,14 +149,14 @@ export class AdminClient {
     return res.json();
   }
 
-  async listActivity(kind: "transactions" | "codes" | "tokens" | "consents", query: Record<string, string> = {}): Promise<{ records: ActivityRecord[]; [key: string]: unknown }> {
+  async listActivity(kind: "transactions" | "codes" | "tokens" | "consents" | "refresh", query: Record<string, string> = {}): Promise<{ records: ActivityRecord[]; [key: string]: unknown }> {
     const qs = new URLSearchParams(query).toString();
     const res = await this.ctx.get(`/api/admin/activity/${kind}${qs ? `?${qs}` : ""}`);
     if (res.status() !== 200) throw new Error(`listActivity(${kind}) failed: ${res.status()} ${await res.text()}`);
     return res.json();
   }
 
-  async revokeActivity(kind: "transactions" | "codes" | "tokens" | "consents", id: string): Promise<void> {
+  async revokeActivity(kind: "transactions" | "codes" | "tokens" | "consents" | "refresh", id: string): Promise<void> {
     const res = await this.ctx.post(`/api/admin/activity/${kind}/${encodeURIComponent(id)}/revoke`, { headers: this.headers(), data: {} });
     if (res.status() !== 204) throw new Error(`revokeActivity(${kind}, ${id}) failed: ${res.status()} ${await res.text()}`);
   }

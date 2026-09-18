@@ -13,6 +13,12 @@ import (
 // ActivityRecord is an explicit administrative projection. It excludes raw
 // credentials, their hashes, browser bindings, state, nonce and PKCE material.
 type ActivityRecord struct {
+	GrantType        string     `json:"grantType,omitempty"`
+	Audience         string     `json:"audience,omitempty"`
+	SubjectKind      string     `json:"subjectKind,omitempty"`
+	FamilyID         string     `json:"familyId,omitempty"`
+	AbsoluteExpiry   *time.Time `json:"absoluteExpiry,omitempty"`
+	IdleExpiry       *time.Time `json:"idleExpiry,omitempty"`
 	ID               string     `json:"id"`
 	Kind             string     `json:"kind"`
 	Status           string     `json:"status"`
@@ -28,8 +34,8 @@ type ActivityRecord struct {
 	CanRevoke        bool       `json:"canRevoke"`
 }
 type ActivityOptions struct {
-	Query, Status string
-	Page          int
+	Query, Status, GrantType, Audience string
+	Page                               int
 }
 type ActivityList struct {
 	Records  []ActivityRecord `json:"records"`
@@ -55,7 +61,7 @@ type ActivityOverview struct {
 
 var ErrActivityNotActive = errors.New("Only active items can be revoked. Consumed, completed, or expired items cannot be revoked.")
 
-var activityKinds = []string{"transactions", "codes", "tokens", "consents"}
+var activityKinds = []string{"transactions", "codes", "tokens", "consents", "refresh"}
 
 func validActivityKind(kind string) bool {
 	for _, k := range activityKinds {
@@ -87,7 +93,7 @@ func activityStatus(revoked, consumed bool, expires, now time.Time, used string)
 	}
 	return "active"
 }
-func activityRecords(tx ReadTx, now time.Time) []ActivityRecord {
+func activityRecords(tx ReadTx, now time.Time, resources []Resource) ([]ActivityRecord, error) {
 	out := []ActivityRecord{}
 	users := map[string]User{}
 	for _, u := range tx.Users() {
@@ -112,7 +118,48 @@ func activityRecords(tx ReadTx, now time.Time) []ActivityRecord {
 	}
 	for _, r := range tx.ListAccessTokens() {
 		status := activityStatus(r.Revoked, false, r.ExpiresAt, now, "")
+		active, err := AccessTokenActive(tx, r, now, resources)
+		if err != nil {
+			return nil, err
+		}
+		if status == "active" && !active {
+			status = "expired"
+		}
 		appendRecord("tokens", r.Hash, r.ClientID, r.UserID, status, r.Scopes, r.IssuedAt, r.ExpiresAt, status == "active", r.IDTokenExpiresAt)
+		row := &out[len(out)-1]
+		row.GrantType = r.GrantType
+		row.Audience = r.Audience
+		row.SubjectKind = r.SubjectKind
+		row.FamilyID = r.FamilyID
+	}
+	for _, r := range tx.ListRefreshTokens() {
+		f, err := tx.RefreshFamily(r.FamilyID)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		expiry := f.AbsoluteExpiry
+		if f.IdleExpiry.Before(expiry) {
+			expiry = f.IdleExpiry
+		}
+		status := activityStatus(f.Revoked, r.Consumed, expiry, now, "consumed")
+		active, err := RefreshFamilyActive(tx, f, now)
+		if err != nil {
+			return nil, err
+		}
+		if status == "active" && !active {
+			status = "expired"
+		}
+		appendRecord("refresh", r.Hash, f.ClientID, f.UserID, status, r.Scopes, r.IssuedAt, expiry, status == "active", time.Time{})
+		row := &out[len(out)-1]
+		row.GrantType = "refresh_token"
+		row.Audience = f.Audience
+		row.SubjectKind = "user"
+		row.FamilyID = f.ID
+		row.AbsoluteExpiry = activityTime(f.AbsoluteExpiry)
+		row.IdleExpiry = activityTime(f.IdleExpiry)
 	}
 	for _, r := range tx.ListConsents() {
 		status := "active"
@@ -136,7 +183,7 @@ func activityRecords(tx ReadTx, now time.Time) []ActivityRecord {
 		}
 		return out[i].ID < out[j].ID
 	})
-	return out
+	return out, nil
 }
 func (s *Service) Activity(ctx context.Context, hash, kind string, opts ActivityOptions) (ActivityList, error) {
 	result := ActivityList{Records: []ActivityRecord{}, Page: opts.Page, PageSize: 10}
@@ -157,11 +204,18 @@ func (s *Service) Activity(ctx context.Context, hash, kind string, opts Activity
 		}
 		q := strings.ToLower(strings.TrimSpace(opts.Query))
 		rows := []ActivityRecord{}
-		for _, r := range activityRecords(tx, s.now()) {
+		records, err := activityRecords(tx, s.now(), s.oauthResources)
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			if (opts.GrantType != "" && r.GrantType != opts.GrantType) || (opts.Audience != "" && r.Audience != opts.Audience) {
+				continue
+			}
 			if r.Kind != kind || (opts.Status != "" && r.Status != opts.Status) {
 				continue
 			}
-			if q != "" && !strings.Contains(strings.ToLower(strings.Join([]string{r.ID, r.ClientID, r.ClientName, r.UserID, r.UserName, r.UserEmail}, " ")), q) {
+			if q != "" && !strings.Contains(strings.ToLower(strings.Join([]string{r.ID, r.ClientID, r.ClientName, r.UserID, r.UserName, r.UserEmail, r.GrantType, r.Audience, r.FamilyID}, " ")), q) {
 				continue
 			}
 			rows = append(rows, r)
@@ -196,7 +250,10 @@ func (s *Service) ActivityOverview(ctx context.Context, hash string) (ActivityOv
 		for _, kind := range activityKinds {
 			result.Counts[kind] = ActivityCounts{}
 		}
-		records := activityRecords(tx, result.GeneratedAt)
+		records, err := activityRecords(tx, result.GeneratedAt, s.oauthResources)
+		if err != nil {
+			return err
+		}
 		for _, r := range records {
 			c := result.Counts[r.Kind]
 			c.Total++
@@ -238,7 +295,11 @@ func (s *Service) RevokeActivity(ctx context.Context, hash, kind, id string) err
 		// Lists and mutations deliberately use the same eligibility projection.
 		now := s.now()
 		found := false
-		for _, record := range activityRecords(tx, now) {
+		records, err := activityRecords(tx, now, s.oauthResources)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
 			if record.Kind == kind && record.ID == id {
 				if record.Status == "revoked" {
 					return nil
@@ -266,6 +327,13 @@ func (s *Service) RevokeActivity(ctx context.Context, hash, kind, id string) err
 			}
 		}
 		switch kind {
+		case "refresh":
+			for _, r := range tx.ListRefreshTokens() {
+				if activityID(kind, r.Hash) == id {
+					tx.RevokeRefreshFamily(r.FamilyID)
+					return nil
+				}
+			}
 		case "tokens":
 			for _, r := range tx.ListAccessTokens() {
 				if activityID(kind, r.Hash) == id {

@@ -37,10 +37,13 @@ func TestDiscoveryDocumentReflectsCapabilities(t *testing.T) {
 	if doc["authorization_endpoint"] != "https://issuer.example.com/authorize" {
 		t.Fatalf("unexpected authorization_endpoint: %v", doc["authorization_endpoint"])
 	}
-	for _, absent := range []string{"registration_endpoint", "revocation_endpoint", "introspection_endpoint", "end_session_endpoint"} {
+	for _, absent := range []string{"registration_endpoint", "end_session_endpoint"} {
 		if _, ok := doc[absent]; ok {
 			t.Fatalf("expected %s to be omitted, not just false", absent)
 		}
+	}
+	if doc["revocation_endpoint"] != svc.Config.Issuer+"/revoke" || doc["introspection_endpoint"] != svc.Config.Issuer+"/introspect" {
+		t.Fatal("missing lifecycle endpoints")
 	}
 	responseTypes, _ := doc["response_types_supported"].([]any)
 	if len(responseTypes) != 1 || responseTypes[0] != "code" {

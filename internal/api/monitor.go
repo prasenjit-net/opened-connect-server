@@ -22,7 +22,7 @@ func (h *authHandler) activity(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 400, "VALIDATION_ERROR", "Search is too long.")
 		return
 	}
-	result, err := h.service.Activity(r.Context(), current(r).Session.Hash, chi.URLParam(r, "kind"), identity.ActivityOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status"), Page: page})
+	result, err := h.service.Activity(r.Context(), current(r).Session.Hash, chi.URLParam(r, "kind"), identity.ActivityOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status"), GrantType: r.URL.Query().Get("grantType"), Audience: r.URL.Query().Get("audience"), Page: page})
 	if err != nil {
 		h.failure(w, err)
 		return

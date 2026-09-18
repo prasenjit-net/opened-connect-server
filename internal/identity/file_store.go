@@ -12,10 +12,14 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const currentVersion = 3
+const currentVersion = 4
 
 type FileStore struct{ path string }
 type fileState struct {
+	OAuthPolicies        map[string]OAuthPolicy             `json:"oauthPolicies,omitempty"`
+	UserOAuthAccess      map[string]OAuthAccess             `json:"userOAuthAccess,omitempty"`
+	RefreshFamilies      map[string]RefreshFamily           `json:"refreshFamilies,omitempty"`
+	RefreshTokens        map[string]RefreshToken            `json:"refreshTokens,omitempty"`
 	InitialTokenMap      map[string]InitialAccessToken      `json:"initialAccessTokens,omitempty"`
 	RegistrationTokenMap map[string]RegistrationAccessToken `json:"registrationAccessTokens,omitempty"`
 	ClientsMap           map[string]ClientRecord            `json:"clients,omitempty"`
@@ -91,7 +95,7 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 			return fmt.Errorf("unsupported or invalid identity store")
 		}
 		switch state.Version {
-		case 1, 2:
+		case 1, 2, 3:
 			// Older stores gain empty protocol and registration maps; existing
 			// identities, client IDs, and encrypted secrets remain unchanged.
 			state.Version = currentVersion
@@ -118,6 +122,13 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 	}
 	if err = ctx.Err(); err != nil {
 		return err
+	}
+	for key, token := range state.AccessTokens {
+		if token.GrantType == "" && token.UserID != "" && token.Audience == "userinfo" {
+			token.GrantType = "authorization_code"
+			token.SubjectKind = "user"
+			state.AccessTokens[key] = token
+		}
 	}
 	if err = s.transformClientSecrets(&state, false); err != nil {
 		return err
@@ -199,7 +210,11 @@ func (s *fileState) SaveUser(user User) error {
 	s.UsersMap[user.ID] = cloneUser(user)
 	return nil
 }
-func (s *fileState) DeleteUser(id string)        { delete(s.UsersMap, id); s.DeleteUserSessions(id) }
+func (s *fileState) DeleteUser(id string) {
+	delete(s.UsersMap, id)
+	delete(s.UserOAuthAccess, id)
+	s.DeleteUserSessions(id)
+}
 func (s *fileState) SaveSession(session Session) { s.Sessions[session.Hash] = session }
 func (s *fileState) DeleteSession(hash string)   { delete(s.Sessions, hash) }
 func (s *fileState) DeleteUserSessions(id string) {
@@ -260,6 +275,7 @@ func (s *fileState) SaveClient(c ClientRecord) {
 	s.ClientsMap[c.ID] = cloneClient(c)
 }
 func (s *fileState) DeleteClient(id string) {
+	delete(s.OAuthPolicies, id)
 	s.DeleteRegistrationToken(id)
 	s.invalidateClientGrants(id)
 	delete(s.ClientsMap, id)
@@ -332,6 +348,11 @@ func (s *fileState) RevokeAccessToken(hash string) {
 	}
 }
 func (s *fileState) RevokeAccessTokensForUser(userID string) {
+	for id, f := range s.RefreshFamilies {
+		if f.UserID == userID {
+			s.RevokeRefreshFamily(id)
+		}
+	}
 	for hash, a := range s.AccessTokens {
 		if a.UserID == userID {
 			a.Revoked = true
@@ -340,6 +361,11 @@ func (s *fileState) RevokeAccessTokensForUser(userID string) {
 	}
 }
 func (s *fileState) RevokeAccessTokensForClient(clientID string) {
+	for id, f := range s.RefreshFamilies {
+		if f.ClientID == clientID {
+			s.RevokeRefreshFamily(id)
+		}
+	}
 	for hash, a := range s.AccessTokens {
 		if a.ClientID == clientID {
 			a.Revoked = true
@@ -348,6 +374,11 @@ func (s *fileState) RevokeAccessTokensForClient(clientID string) {
 	}
 }
 func (s *fileState) RevokeAccessTokensForCode(codeHash string) {
+	for id, f := range s.RefreshFamilies {
+		if f.CodeHash == codeHash {
+			s.RevokeRefreshFamily(id)
+		}
+	}
 	for hash, a := range s.AccessTokens {
 		if a.CodeHash == codeHash {
 			a.Revoked = true
@@ -364,6 +395,13 @@ func (s *fileState) Consent(userID, clientID string) (Consent, error) {
 	return cloneConsent(c), nil
 }
 func (s *fileState) SaveConsent(c Consent) {
+	if c.Revoked {
+		for id, f := range s.RefreshFamilies {
+			if f.UserID == c.UserID && f.ClientID == c.ClientID {
+				s.RevokeRefreshFamily(id)
+			}
+		}
+	}
 	if s.Consents == nil {
 		s.Consents = map[string]Consent{}
 	}
@@ -378,6 +416,17 @@ func (s *fileState) SaveConsent(c Consent) {
 // access tokens. It mirrors PruneSessions
 // and is called opportunistically from write paths that touch this state.
 func (s *fileState) PruneOIDCState(now time.Time) {
+	for id, f := range s.RefreshFamilies {
+		if !now.Before(f.RetainUntil) {
+			delete(s.RefreshFamilies, id)
+			for hash, t := range s.RefreshTokens {
+				if t.FamilyID == id {
+					delete(s.RefreshTokens, hash)
+				}
+			}
+		}
+	}
+
 	for k, t := range s.AuthzTransactions {
 		if !t.ExpiresAt.After(now) {
 			delete(s.AuthzTransactions, k)

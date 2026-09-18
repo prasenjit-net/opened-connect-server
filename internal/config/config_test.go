@@ -177,3 +177,41 @@ func TestDynamicRegistrationConfiguration(t *testing.T) {
 		t.Fatal("HTTPS registration rejected", err)
 	}
 }
+
+func TestOAuthConfigurationValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		key   string
+		value any
+	}{
+		{"HTTP audience", "oauth.resources", []map[string]any{{"audience": "http://api.example", "scopes": []string{"read"}, "enabled": true}}},
+		{"OIDC scope", "oauth.resources", []map[string]any{{"audience": "https://api.example", "scopes": []string{"openid"}, "enabled": true}}},
+		{"oversized idle", "oidc.refreshInactivityTTL", "800h"},
+		{"zero maximum", "oidc.refreshMaxTTL", "0s"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := viper.New()
+			SetDefaults(v)
+			v.Set("oidc.enabled", true)
+			v.Set(tc.key, tc.value)
+			if _, err := Load(v); err == nil {
+				t.Fatal("invalid configuration accepted")
+			}
+		})
+	}
+	v := viper.New()
+	SetDefaults(v)
+	v.Set("oauth.refreshTokensEnabled", true)
+	if _, err := Load(v); err == nil {
+		t.Fatal("refresh enabled without protocol")
+	}
+	v.Set("oidc.enabled", true)
+	v.Set("oauth.resources", []map[string]any{{"audience": "https://api.example", "scopes": []string{"read"}, "enabled": true}})
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.OAuth.Resources) != 1 || !cfg.OAuth.RefreshTokensEnabled || cfg.OAuth.PasswordGrantEnabled {
+		t.Fatal("incorrect defaults or decoding")
+	}
+}

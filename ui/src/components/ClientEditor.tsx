@@ -8,6 +8,8 @@ export default function ClientEditor({ client, onSave, onCancel }: {
  const sectionId = useId();
  const [initial] = useState(() => clientMetadata(client));
  const [fields, setFields] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(initial).map(([k,v]) => [k, Array.isArray(v) ? v.join("\n") : String(v ?? "")])));
+ const oauthOnly = !!fields.grant_types && !fields.grant_types.split("\n").some(g => g === "authorization_code" || g === "implicit");
+ const sections = metadataSections.filter(section => !oauthOnly || !["Login requirements", "Subject privacy", "ID token protection", "UserInfo protection", "Request objects"].includes(section.title));
  const [authTime, setAuthTime] = useState(initial.require_auth_time === true);
  const [jwks, setJwks] = useState(initial.jwks ? JSON.stringify(initial.jwks, null, 2) : "");
  const [localized, setLocalized] = useState(JSON.stringify(Object.fromEntries(Object.entries(initial).filter(([k]) => k.includes("#"))),null,2));
@@ -18,6 +20,7 @@ export default function ClientEditor({ client, onSave, onCancel }: {
   try {
    const input: ClientMetadata = { require_auth_time: authTime };
    for (const section of metadataSections) for (const [key,,kind] of section.fields) {
+    if (oauthOnly && (key === "response_types" || key === "redirect_uris")) { input[key] = []; continue; }
     const value = fields[key] ?? "";
     if (clientListChoices[key] && !value.trim()) throw new Error(`Select at least one ${key === "response_types" ? "response type" : "grant type"}.`);
     if (value.trim() !== "") input[key as string] = kind === "list" ? [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))] : kind === "number" ? Number(value) : value.trim();
@@ -42,19 +45,21 @@ export default function ClientEditor({ client, onSave, onCancel }: {
  };
  return <section className="card min-w-0">
   <div className="card-head"><h2>{client ? "Edit client" : "Create client"}</h2></div>
-  <nav aria-label="Client settings sections" className="mb-6 flex flex-wrap gap-2">{metadataSections.map((section, index) => <a key={section.title} className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink" href={`#${sectionId}-${index}`}>{section.title}</a>)}</nav>
+  <nav aria-label="Client settings sections" className="mb-6 flex flex-wrap gap-2">{sections.map((section, index) => <a key={section.title} className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:bg-surface-2 hover:text-ink" href={`#${sectionId}-${index}`}>{section.title}</a>)}</nav>
   <form onSubmit={submit} className="flex flex-col gap-6">
-   {metadataSections.map((section, index) => <fieldset id={`${sectionId}-${index}`} key={section.title} className="form-section scroll-mt-24">
+   <label className="flex flex-col gap-1.5 text-sm font-medium">Client purpose<select className="input" value={oauthOnly ? "oauth" : "openid"} onChange={e => setFields(current => ({ ...current, grant_types: e.target.value === "oauth" ? "client_credentials" : "authorization_code", response_types: e.target.value === "oauth" ? "" : "code" }))}><option value="openid">OpenID Connect sign-in</option><option value="oauth">OAuth API access</option></select><span className="text-xs text-ink-muted">API clients do not need sign-in redirects. After saving, configure OAuth permissions below.</span></label>
+   {sections.map((section, index) => <fieldset id={`${sectionId}-${index}`} key={section.title} className="form-section scroll-mt-24">
     <legend className="form-section-title">{section.title}</legend>
     <p className="form-section-description">{section.description}</p>
     <div className="grid min-w-0 gap-4 lg:grid-cols-2">
      {section.fields.map(([key,label,kind]) => {
+      if (oauthOnly && (key === "redirect_uris" || key === "response_types")) return null;
       const value = fields[key] ?? "";
       const change = (next: string) => setFields(current => ({ ...current, [key]: next }));
       if (clientListChoices[key]) {
        const selected = value.split("\n").filter(Boolean);
        const choices = [...new Set([...clientListChoices[key], ...selected])];
-       return <fieldset key={key} className="min-w-0 rounded-lg border border-line p-3"><legend className="px-1 text-sm font-medium">{label}</legend><div className="grid gap-2 sm:grid-cols-2">{choices.map(choice => <label key={choice} className="flex min-w-0 items-start gap-2 text-sm"><input type="checkbox" className="mt-1 shrink-0" checked={selected.includes(choice)} onChange={e => change((e.target.checked ? [...selected, choice] : selected.filter(item => item !== choice)).join("\n"))} /><span className="min-w-0 break-words [overflow-wrap:anywhere]">{choice}{!["code", "authorization_code"].includes(choice) && <span className="block text-xs text-ink-faint">Not supported by this provider yet</span>}</span></label>)}</div></fieldset>;
+       return <fieldset key={key} className="min-w-0 rounded-lg border border-line p-3"><legend className="px-1 text-sm font-medium">{label}</legend><div className="grid gap-2 sm:grid-cols-2">{choices.map(choice => <label key={choice} className="flex min-w-0 items-start gap-2 text-sm"><input type="checkbox" className="mt-1 shrink-0" checked={selected.includes(choice)} onChange={e => change((e.target.checked ? [...selected, choice] : selected.filter(item => item !== choice)).join("\n"))} /><span className="min-w-0 break-words [overflow-wrap:anywhere]">{choice}{!["code", "authorization_code", "client_credentials", "password", "refresh_token"].includes(choice) && <span className="block text-xs text-ink-faint">Not supported by this provider yet</span>}{["client_credentials", "password", "refresh_token"].includes(choice) && <span className="block text-xs text-ink-faint">Requires explicit OAuth permission</span>}</span></label>)}</div></fieldset>;
       }
       if (kind === "list") return <ListField key={key} label={label} value={value} onChange={change} required={key === "redirect_uris"} type={key === "contacts" ? "email" : key.endsWith("uris") ? "url" : "text"} placeholder={key === "redirect_uris" ? "https://app.example.com/callback" : key === "contacts" ? "admin@example.com" : undefined} />;
       const algorithms = key.endsWith("_enc") ? encryptionMethods : key.includes("encryption_alg") || key.includes("encrypted_response_alg") ? encryptionAlgorithms : key.endsWith("_alg") ? signingAlgorithms.filter(alg => key !== "token_endpoint_auth_signing_alg" || alg !== "none") : undefined;

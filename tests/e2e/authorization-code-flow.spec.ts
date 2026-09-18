@@ -87,6 +87,7 @@ test.describe("authorization code flow (golden path)", () => {
     expect(tokens.token_type).toBe("Bearer");
     expect(tokens.access_token).toBeTruthy();
     expect(tokens.id_token).toBeTruthy();
+    expect(tokens.refresh_token).toBeUndefined(); // No offline_access consent.
 
     // Independently verify the ID token's signature against the published
     // JWKS (the "jose" library, not this project's own Go code) and check

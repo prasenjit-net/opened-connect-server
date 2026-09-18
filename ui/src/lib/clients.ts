@@ -28,7 +28,7 @@ export const metadataSections = [
   ["client_name", "Client name", "text"], ["application_type", "Application type", "application"],
   ["redirect_uris", "Redirect URIs", "list"],
  ] },
- { title: "Authorization flow", description: "Choose how this application requests authorization and receives tokens. Authorization code is the supported flow.", fields: [
+ { title: "Authorization flow", description: "Choose how this application requests authorization and receives tokens. Use authorization code for sign-in or explicitly permitted OAuth grants for API access.", fields: [
   ["response_types", "Response types", "list"], ["grant_types", "Grant types", "list"],
  ] },
  { title: "Client authentication and keys", description: "Control how the application authenticates at the token endpoint. Public keys can be provided by URI or inline below.", fields: [
@@ -77,5 +77,5 @@ export const encryptionAlgorithms = ["RSA-OAEP", "RSA-OAEP-256", "A128KW", "A192
 export const encryptionMethods = ["A128CBC-HS256", "A192CBC-HS384", "A256CBC-HS512", "A128GCM", "A192GCM", "A256GCM"];
 export const clientListChoices: Record<string, string[]> = {
  response_types: ["code", "id_token", "id_token token", "code id_token", "code token", "code id_token token"],
- grant_types: ["authorization_code", "implicit", "refresh_token"],
+ grant_types: ["authorization_code", "refresh_token", "client_credentials", "password", "implicit"],
 };

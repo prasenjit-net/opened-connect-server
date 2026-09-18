@@ -14,6 +14,10 @@ import (
 // default (request_parameter_supported, request_uri_parameter_supported,
 // require_request_uri_registration, claims_parameter_supported).
 type discoveryDocument struct {
+	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
+	IntrospectionAuthMethods          []string `json:"introspection_endpoint_auth_methods_supported"`
+	RevocationAuthMethods             []string `json:"revocation_endpoint_auth_methods_supported"`
 	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
@@ -51,6 +55,7 @@ func (s *Service) discoveryDocument() discoveryDocument {
 		registrationEndpoint = issuer + "/register"
 	}
 	return discoveryDocument{
+		RevocationEndpoint: issuer + "/revoke", IntrospectionEndpoint: issuer + "/introspect", IntrospectionAuthMethods: []string{"client_secret_basic", "client_secret_post"}, RevocationAuthMethods: capability.SupportedAuthMethods,
 		RegistrationEndpoint:              registrationEndpoint,
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             issuer + "/authorize",
@@ -59,11 +64,11 @@ func (s *Service) discoveryDocument() discoveryDocument {
 		JWKSURI:                           issuer + "/jwks",
 		ResponseTypesSupported:            capability.SupportedResponseTypes,
 		ResponseModesSupported:            []string{"query"},
-		GrantTypesSupported:               capability.SupportedGrantTypes,
+		GrantTypesSupported:               s.supportedGrants(),
 		SubjectTypesSupported:             capability.SupportedSubjectTypes,
 		IDTokenSigningAlgValuesSupported:  capability.SupportedSigningAlgs,
 		TokenEndpointAuthMethodsSupported: capability.SupportedAuthMethods,
-		ScopesSupported:                   capability.SupportedScopes,
+		ScopesSupported:                   s.supportedScopes(),
 		ClaimsSupported:                   supportedClaims,
 		CodeChallengeMethodsSupported:     capability.SupportedPKCEMethods,
 		RequestParameterSupported:         false,
@@ -91,4 +96,12 @@ func (s *Service) JWKSHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(s.Keys.PublicJWKS())
+}
+
+func (s *Service) supportedScopes() []string {
+	scopes := append([]string{}, capability.SupportedScopes...)
+	if s.Config.RefreshTokensEnabled {
+		scopes = append(scopes, "offline_access")
+	}
+	return scopes
 }

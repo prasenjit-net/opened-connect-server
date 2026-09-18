@@ -1,6 +1,6 @@
 # OIDC end-to-end tests (Playwright)
 
-A browser-driven end-to-end suite for the OpenID Connect provider. **Manual only — never run by CI/CD.** It exercises real navigation through login, consent, redirect back to a (mocked) relying party, server-to-server code exchange, and `/userinfo`, plus admin-side dynamic registration and activity/revocation. The Go and Vitest suites already cover protocol edge cases and validation logic exhaustively at the unit/integration level; this suite is for the things only a real browser round-trip proves.
+A browser-driven end-to-end suite for the OpenID Connect provider. **Manual only — never run by CI/CD.** It exercises real navigation through login, consent, redirect back to a (mocked) relying party, server-to-server code exchange, and `/userinfo`, plus OAuth grant permissions, resource tokens, introspection/revocation, rotating refresh tokens, dynamic registration, and browser administration. The Go and Vitest suites already cover protocol edge cases and validation logic exhaustively at the unit/integration level; this suite is for the things only a real browser round-trip proves.
 
 ## This suite does not start a server
 
@@ -14,7 +14,7 @@ It targets whatever OpenID Connect server is **already running** at a URL you te
   bash scripts/run-server.sh
   ```
 
-  This builds the binary if needed, wipes `tests/.server-workspace/`, provisions a fresh admin + signing keys with `oidc.enabled`, `oidc.registrationEnabled`, and `oidc.allowedOrigins` all on, runs `serve` in the foreground on port 8099 (override with `E2E_PORT`), and **writes `tests/.env`** with matching `E2E_BASE_URL`/`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` for you. Leave it running in its own terminal.
+  This builds the binary if needed, wipes `tests/.server-workspace/`, provisions a fresh admin + signing keys with OIDC, dynamic registration, CORS, refresh tokens, two test API resources, and the legacy password grant enabled, runs `serve` in the foreground on port 8099 (override with `E2E_PORT`), and **writes `tests/.env`** with matching `E2E_BASE_URL`/`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` for you. Leave it running in its own terminal.
 
 ## Running the suite
 
@@ -25,7 +25,9 @@ npx playwright install chromium   # first time only
 
 cp .env.example .env   # then edit .env — skip this if scripts/run-server.sh already wrote one for you
 
+npm run typecheck     # TypeScript check
 npm test              # headless
+npm run test:oauth    # OAuth protocol, permission editor, and refresh scenarios
 npm run test:headed   # watch it drive a real browser
 npm run test:ui       # Playwright's interactive UI mode
 npm run report         # open the HTML report from the last run
@@ -41,6 +43,7 @@ Configuration comes from `tests/.env` (never committed — `.env.example` is the
 
 - Every spec provisions its **own** OIDC client(s), and usually its own end user, rather than sharing fixtures across spec files.
 - User emails and client names include a per-run random suffix (`RUN_ID`), so re-running the suite against the same **persistent** server (not just a disposable one) never collides with a previous run's leftovers.
+- AdminClient cleans up the users and clients it creates after each fixture/spec, including dynamically registered test clients. Unused initial-access invitations are revoked; inactive retained activity remains subject to normal server cleanup.
 - Nothing here deletes or mutates data it didn't create itself, except where a spec is specifically testing revocation of a grant it just created.
 - If you point this at a real, shared, non-disposable server, remember it **will** create real users and clients there (clearly named `... <RUN_ID>` / `...-<RUN_ID>@example.test`) — prefer a disposable instance via `scripts/run-server.sh` unless you have a reason not to.
 
@@ -54,7 +57,7 @@ There's no real third-party relying party to redirect to. Most specs use `https:
 
 | File | Covers |
 | --- | --- |
-| `discovery.spec.ts` | Discovery document and JWKS content; protocol routes never fall through to the SPA |
+| `discovery.spec.ts` | OIDC and OAuth metadata agree with configured grant flags; JWKS contains only public material; protocol methods never fall through to the SPA |
 | `authorization-code-flow.spec.ts` | The golden path: login → consent → redirect → code exchange → **independently signature-verified** ID token → UserInfo |
 | `consent-deny.spec.ts` | Denial still redirects the RP back with `error=access_denied` |
 | `invalid-requests.spec.ts` | Unknown client / unregistered redirect_uri / duplicate params render an error page directly, never a redirect |
@@ -64,8 +67,62 @@ There's no real third-party relying party to redirect to. Most specs use `https:
 | `admin-activity-revocation.spec.ts` | Admin revokes a live access token / consent via the activity API; revoked tokens immediately fail at `/userinfo`; consent revocation blocks a subsequent silent (`prompt=none`) sign-in |
 | `public-client-cors.spec.ts` | A public-client SPA completes the flow via browser `fetch()`, gated by `oidc.allowedOrigins` (skipped if the mocked RP origin isn't allowlisted on the target server) |
 
+## OAuth scenarios and feature flags
+
+| File | Covers |
+| --- | --- |
+| `oauth-lifecycle.spec.ts` | Introspection permission/audience boundaries, public and foreign-client revocation, hints, malformed forms, disabled grants, machine subjects and activity filters, password entitlements, and rejection of protocol tokens at management APIs |
+| `oauth-administration.spec.ts` | Regular-user menu and route guards, admin API authorization/CSRF, persisted OAuth policy controls, OAuth-only client fields, and user resource entitlements |
+| `refresh-token-flow.spec.ts` | Public/confidential rotation, permanent scope narrowing, wrong-client/resource rejection, explicit offline consent, code replay, concurrent refresh, logout, access-vs-family revocation, consent/password invalidation, automatic activity loading, 10-row pagination, and consumed-item revoke restrictions |
+
+The suite reads `/api/admin/oauth`; it never enables features on the target server.
+Disabled grants are tested for rejection. Positive refresh, password, and resource
+scenarios are explicitly skipped when their prerequisites are absent, with reasons
+in the Playwright report. For complete coverage, run once against the default
+configuration and once against a disposable instance with:
+
+```yaml
+oidc:
+  enabled: true
+  registrationEnabled: true
+  allowedOrigins:
+    - http://127.0.0.1:9999
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: true # Test-only legacy compatibility; not recommended for production.
+  resources:
+    - audience: https://api.e2e.example.test
+      enabled: true
+      scopes: [read, write]
+    - audience: https://other.e2e.example.test
+      enabled: true
+      scopes: [read]
+```
+
+The disposable helper configures this automatically. Rebuild the application
+(`make build`) before starting the helper when testing changed backend/UI code;
+the helper uses the existing binary when one is present. Do not enable the legacy
+password grant on a shared server just to eliminate test skips.
+
+To test the server already running on port 8080 while preserving `tests/.env`:
+
+```sh
+cd tests
+E2E_BASE_URL=http://localhost:8080 npm test
+```
+
+Use the exact configured issuer hostname (`localhost` and `127.0.0.1` are distinct
+origins). Run suites sequentially because they share the temporary `.auth`
+fixture directory. HTML reports are under `tests/playwright-report/`; use
+`PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report-full` to keep a second configuration's
+report separately. Traces and screenshots are retained on failure.
+
 ## Troubleshooting
 
 - **"No OIDC-enabled server responding at ..."** — nothing is listening at `E2E_BASE_URL`, or it's running with `oidc.enabled: false`.
 - **"Admin login failed"** — `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` don't match a real active administrator on that server.
 - **Dynamic-registration or CORS specs report "skipped"** — the target server doesn't have `oidc.registrationEnabled` / a matching `oidc.allowedOrigins` entry; that's expected unless you specifically enabled them (`scripts/run-server.sh` enables both).
+
+- **OAuth scenarios report "skipped"** — refresh/password flags or enabled resources are absent. The disabled-grant boundary tests still run; use the disposable configuration above to exercise positive flows.
+
+- **Login returns 429** — repeated full runs can exhaust the server's 30-logins-per-peer / 15-minute limit. Wait for the window, or restart only a disposable test server between runs. The suite does not disable, evade, or automatically retry through this protection. Login helpers report the HTTP failure immediately instead of timing out waiting for navigation.

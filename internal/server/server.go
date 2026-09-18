@@ -52,6 +52,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 	if err != nil {
 		return nil, err
 	}
+	auth.ConfigureOAuthResources(cfg.OAuth.Resources)
 	app := &App{cfg: cfg, logger: logger, build: build, options: options, identity: auth}
 	if cfg.OIDC.Enabled {
 		keys, err := oidc.NewFileKeyStore(filepath.Join(cfg.Storage.DataDir, "signing-keys"))
@@ -65,6 +66,11 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 			return nil, fmt.Errorf("load signing keys: %w", err)
 		}
 		app.oidc = oidc.New(auth, store, keys, oidc.Config{
+			PasswordGrantEnabled:  cfg.OAuth.PasswordGrantEnabled,
+			RefreshTokensEnabled:  cfg.OAuth.RefreshTokensEnabled,
+			Resources:             cfg.OAuth.Resources,
+			RefreshMaxTTL:         cfg.OIDC.RefreshMaxTTL,
+			RefreshInactivityTTL:  cfg.OIDC.RefreshInactivityTTL,
 			RegistrationEnabled:   cfg.OIDC.RegistrationEnabled,
 			RegistrationAllowHTTP: cfg.App.Env == "development" || cfg.App.Env == "test",
 			Issuer:                cfg.OIDC.Issuer,
@@ -103,7 +109,7 @@ func (a *App) Handler() http.Handler {
 	// paths. They deliberately sit outside /api's JSON/CSRF middleware.
 	// Reserve protocol paths even for wrong methods, disabled OIDC, or trailing
 	// segments so an OAuth request can never fall through to SPA HTML.
-	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/register/{clientID}": "GET, OPTIONS"} {
+	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/introspect": "POST", "/revoke": "POST, OPTIONS", "/.well-known/oauth-authorization-server": "GET", "/register/{clientID}": "GET, OPTIONS"} {
 		r.Handle(endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
@@ -126,6 +132,10 @@ func (a *App) Handler() http.Handler {
 	if a.oidc != nil {
 		r.Get("/.well-known/openid-configuration", a.oidc.DiscoveryHandler)
 		r.Get("/jwks", a.oidc.JWKSHandler)
+		r.Get("/.well-known/oauth-authorization-server", a.oidc.OAuthMetadataHandler)
+		r.Post("/introspect", a.oidc.IntrospectHandler)
+		r.Post("/revoke", a.oidc.WithCORS(a.oidc.RevokeHandler))
+		r.Options("/revoke", a.oidc.CORSPreflight)
 		r.Get("/authorize", a.oidc.AuthorizeHandler)
 		r.Post("/authorize", a.oidc.AuthorizeHandler)
 		r.Post("/token", a.oidc.WithCORS(a.oidc.TokenHandler))

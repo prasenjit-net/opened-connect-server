@@ -24,6 +24,7 @@ func TestActivityAdminBoundaryPaginationAndRedaction(t *testing.T) {
 	}
 	now := time.Now()
 	if err := store.Write(context.Background(), func(tx identity.Tx) error {
+		seedActivityOwner(tx, now)
 		for i := 0; i < 12; i++ {
 			tx.SaveAccessToken(identity.AccessToken{Hash: fmt.Sprintf("sensitive-token-hash-%02d", i), ClientID: "portal", UserID: "user", Audience: "userinfo", Scopes: []string{"openid"}, IssuedAt: now.Add(time.Duration(i) * time.Second), ExpiresAt: now.Add(time.Hour)})
 		}
@@ -138,7 +139,8 @@ func TestActivityRejectsConsumedCompletedAndExpiredRevocation(t *testing.T) {
 	// An item can expire after being listed: the POST must check the current
 	// state instead of relying on the UI's previously supplied canRevoke flag.
 	if err := store.Write(t.Context(), func(tx identity.Tx) error {
-		tx.SaveAccessToken(identity.AccessToken{Hash: "stale-list-token", ExpiresAt: now.Add(time.Hour)})
+		seedActivityOwner(tx, now)
+		tx.SaveAccessToken(identity.AccessToken{ClientID: "portal", UserID: "user", Audience: "userinfo", GrantType: "authorization_code", SubjectKind: "user", IssuedAt: now, Hash: "stale-list-token", ExpiresAt: now.Add(time.Hour)})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -164,4 +166,11 @@ func TestActivityRejectsConsumedCompletedAndExpiredRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectStatus(t, rig.request(t, "POST", "/admin/activity/tokens/"+list.Records[0].ID+"/revoke", map[string]any{}, admin), 409)
+}
+
+func seedActivityOwner(tx identity.Tx, now time.Time) {
+	var metadata identity.ClientMetadata
+	_ = json.Unmarshal([]byte(`{"grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}`), &metadata)
+	tx.SaveClient(identity.ClientRecord{ID: "portal", Metadata: metadata, UpdatedAt: now.Add(-time.Second)})
+	_ = tx.SaveUser(identity.User{Profile: identity.Profile{ID: "user", Active: true}})
 }

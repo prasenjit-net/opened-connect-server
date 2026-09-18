@@ -177,7 +177,7 @@ func TestIssuanceFailureLeavesCodeUsable(t *testing.T) {
 				f.svc.Store = failedCommitStore{f.store}
 			}
 			failed := doToken(f, form)
-			if failed.Code != 500 {
+			if failed.Code != 503 {
 				t.Fatalf("expected server_error, got %d %s", failed.Code, failed.Body.String())
 			}
 			f.svc.Keys = keys

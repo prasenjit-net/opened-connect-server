@@ -48,11 +48,26 @@ auth:
 
 oidc:
   enabled: true
+  refreshMaxTTL: 720h
+  refreshInactivityTTL: 168h
   registrationEnabled: true
   issuer: http://127.0.0.1:$PORT
   allowedOrigins:
     - https://relying-party.test
     - http://127.0.0.1:9999
+
+# Test-only configuration: exercise both optional grants. Never copy the
+# legacy password setting into a recommended production configuration.
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: true
+  resources:
+    - audience: https://api.e2e.example.test
+      enabled: true
+      scopes: [read, write]
+    - audience: https://other.e2e.example.test
+      enabled: true
+      scopes: [read]
 YAML
 
 echo "==> Initializing admin and signing keys" >&2

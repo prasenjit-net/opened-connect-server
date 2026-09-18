@@ -1,3 +1,4 @@
+import { UserOAuthPermissions } from "../components/OAuthPermissions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -51,6 +52,7 @@ export default function UserDetailPage() {
         <p className="mt-3 text-xs text-ink-faint">Created {new Date(query.data.createdAt).toLocaleString()}</p>
       </section>
       <UserEditor key={query.data.id} user={query.data} onSave={save} onCancel={() => { void navigate({ to: "/users" }); }} />
+      <UserOAuthPermissions id={userId} />
       <section className="card">
         <h2 className="mb-3 font-semibold">Delete user</h2>
         {confirmDelete ? <div role="alertdialog" aria-labelledby="delete-title" aria-describedby="delete-description">

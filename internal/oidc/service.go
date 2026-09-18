@@ -11,6 +11,11 @@ import (
 // runtime. It mirrors config.OIDCConfig but lives here so this package
 // doesn't depend on internal/config for its core logic.
 type Config struct {
+	PasswordGrantEnabled  bool
+	RefreshTokensEnabled  bool
+	Resources             []identity.Resource
+	RefreshMaxTTL         time.Duration
+	RefreshInactivityTTL  time.Duration
 	RegistrationEnabled   bool
 	RegistrationAllowHTTP bool
 	AllowedOrigins        []string
@@ -37,9 +42,11 @@ type Service struct {
 
 	clientAuthLimiter *clientAuthLimiter
 	trafficLimiter    *clientAuthLimiter
+	passwordLimiter   *clientAuthLimiter
+	passwordSlots     chan struct{}
 }
 
 func New(idService *identity.Service, store identity.Store, keys *KeyStore, cfg Config) *Service {
 	cfg.Issuer = strings.TrimSuffix(cfg.Issuer, "/")
-	return &Service{Identity: idService, Store: store, Keys: keys, Config: cfg, Now: time.Now, clientAuthLimiter: newClientAuthLimiter(), trafficLimiter: newClientAuthLimiter()}
+	return &Service{Identity: idService, Store: store, Keys: keys, Config: cfg, Now: time.Now, clientAuthLimiter: newClientAuthLimiter(), trafficLimiter: newClientAuthLimiter(), passwordLimiter: newClientAuthLimiter(), passwordSlots: make(chan struct{}, 4)}
 }

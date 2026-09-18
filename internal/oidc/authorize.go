@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
-	"github.com/prasenjit-net/opened-connect-server/internal/oidc/capability"
 )
 
 var supportedPrompts = []string{"none", "login", "consent", "select_account"}
@@ -83,6 +82,10 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	state := params.Get("state")
 	fail := func(code, description string) { redirectWithError(w, r, redirectURI, code, description, state) }
 
+	if params.Has("resource") {
+		fail("invalid_target", "Authorization code grants target UserInfo only.")
+		return
+	}
 	if _, present := params["request"]; present {
 		fail("request_not_supported", "Request objects are not supported.")
 		return
@@ -109,13 +112,30 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestedScopes := strings.Fields(params.Get("scope"))
+	if slices.Contains(requestedScopes, "offline_access") {
+		allowed := false
+		err := s.Store.Read(r.Context(), func(tx identity.ReadTx) error {
+			p := tx.OAuthPolicy(client.ID)
+			allowed = s.Config.RefreshTokensEnabled && p.RefreshEnabled && slices.Contains(p.Grants, "refresh_token") && slices.Contains(client.GrantTypes, "refresh_token")
+			return nil
+		})
+		if err != nil {
+			fail("server_error", "Unable to read offline access policy.")
+			return
+		}
+		if !allowed || !slices.Contains(strings.Fields(params.Get("prompt")), "consent") {
+			fail("invalid_scope", "Offline access requires client permission and explicit prompt=consent.")
+			return
+		}
+	}
+
 	if !slices.Contains(requestedScopes, "openid") {
 		fail("invalid_scope", "The openid scope is required.")
 		return
 	}
 	scopes := make([]string, 0, len(requestedScopes))
 	for _, sc := range requestedScopes {
-		if slices.Contains(capability.SupportedScopes, sc) {
+		if slices.Contains(s.supportedScopes(), sc) {
 			scopes = append(scopes, sc)
 		}
 	}

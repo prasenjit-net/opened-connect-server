@@ -30,11 +30,12 @@ type ScopeInfo struct {
 }
 
 var scopeDescriptions = map[string]string{
-	"openid":  "Confirm your identity",
-	"profile": "Your name and basic profile information",
-	"email":   "Your email address",
-	"address": "Your postal address",
-	"phone":   "Your phone number",
+	"offline_access": "Maintain access when you are not signed in",
+	"openid":         "Confirm your identity",
+	"profile":        "Your name and basic profile information",
+	"email":          "Your email address",
+	"address":        "Your postal address",
+	"phone":          "Your phone number",
 }
 
 // TransactionView is the interaction API's response shape: either the

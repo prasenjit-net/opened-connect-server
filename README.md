@@ -249,7 +249,7 @@ Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve 
 
 Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
 
-This initial delivery implements OpenID Connect Core's authorization-code profile plus Discovery: PKCE S256 (required, no downgrade), `client_secret_basic`/`client_secret_post`/`none` client authentication, opaque access tokens, RS256-signed ID tokens, and scope-gated UserInfo (`openid`, `profile`, `email`, `address`, `phone`). A registered client is usable with these endpoints only when its metadata is fully compatible; the client detail screen flags any client requesting capabilities this provider doesn't implement yet (pairwise subjects, `private_key_jwt`/`client_secret_jwt`, ID-token/UserInfo encryption, non-`RS256` signing, or response/grant types other than `code`/`authorization_code`) instead of silently downgrading it. Refresh tokens, `/revoke`, `/introspect`, RP-initiated logout, request objects, dynamic client registration, and WebFinger are not implemented in this delivery.
+The provider implements OpenID Connect authorization code with required PKCE S256, discovery, opaque access tokens, RS256 ID tokens, and scope-gated UserInfo. OpenID Connect sign-in requires compatible client metadata; unsupported signing, encryption, pairwise subjects, and implicit/hybrid response types are flagged in client detail. Dynamic client registration and OAuth token lifecycle endpoints are described below. RP-initiated logout, request objects, and WebFinger are not implemented. OAuth grants are controlled separately by explicit administrative permissions.
 
 ### Authorization-code security and browser clients
 
@@ -277,12 +277,12 @@ Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATIO
 
 ### Administrative activity monitoring
 
-The admin sidebar has one **Activity** menu entry, with tabs for all four monitoring pages. Administrators can open `/activity/transactions`, `/activity/codes`, `/activity/tokens`, and `/activity/consents`. Each page shows retained records with user/client labels, scopes, lifecycle status, creation/expiry times, explicit search and status filters, 10-record pagination, manual refresh, and automatic refresh every 15 seconds. The admin dashboard summarizes these records and shows the 10 newest records plus user/client totals. Regular users receive a personal dashboard and cannot see or request administrative activity.
+The admin sidebar has one **Activity** menu entry, with tabs for protocol activity and initial access tokens. Administrators can open `/activity/transactions`, `/activity/codes`, `/activity/tokens`, `/activity/refresh`, and `/activity/consents`. Each page shows retained records with user/client labels, scopes, lifecycle status, creation/expiry times, explicit search and status filters, 10-record pagination, manual refresh, and automatic refresh every 15 seconds. The admin dashboard summarizes these records and shows the 10 newest records plus user/client totals. Regular users receive a personal dashboard and cannot see or request administrative activity.
 
 Monitoring endpoints use the existing admin browser session boundary:
 
 - `GET /api/admin/activity/overview`
-- `GET /api/admin/activity/{transactions|codes|tokens|consents}?q=...&status=...&page=1`
+- `GET /api/admin/activity/{transactions|codes|tokens|refresh|consents}?q=...&status=...&grantType=...&audience=...&page=1`
 - `POST /api/admin/activity/{kind}/{id}/revoke` with `{}` and the session CSRF header
 
 The service rechecks admin authorization within the storage transaction. Responses are not cached, contain derived administrative record IDs, and exclude raw tokens, credential hashes, session/browser bindings, OAuth state/nonce, and PKCE material. List operations are part of the storage interface for future database adapters.
@@ -354,3 +354,133 @@ Implemented: the OIDC registration and configuration-read profile described in
 RFC 7592 self-service update/delete remains an optional later phase; those methods
 return 405. Admins continue updating and deleting clients through `/api/admin/clients`.
 This is not a claim of full OpenID conformance certification.
+
+
+## OAuth token lifecycle and API access
+
+With `oidc.enabled`, the provider also exposes `POST /introspect`, `POST /revoke`,
+`grant_type=client_credentials` at `/token`, and
+`/.well-known/oauth-authorization-server`. All token requests are bounded,
+form-encoded POSTs. Protocol client authentication uses the registered
+`client_secret_basic`, `client_secret_post`, or (where allowed) `none` method;
+browser cookies, management roles, IATs, and RATs do not authorize these calls.
+
+Example server configuration:
+
+```yaml
+oidc:
+  enabled: true
+  refreshMaxTTL: 720h
+  refreshInactivityTTL: 168h
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: false
+  resources:
+    - audience: https://api.example.com
+      enabled: true
+      scopes: [read, write]
+```
+
+Resources have exact HTTPS audience identifiers and non-OIDC scope names. They
+are configured by the operator, not created by a token request or dynamic
+registration. Restart after configuration changes. Disabling a resource or
+removing its scopes makes affected tokens inactive during introspection.
+
+Create an **OAuth API access** client without redirects for machine access.
+Register `client_credentials`, then use **OAuth permissions** on client detail to
+allow the grant, select resources, allowed/default scopes, and an optional default
+resource. Without an approved default, each request must include `resource`.
+Only one resource per request is supported. Machine tokens have subject
+`client:<client_id>` and cannot access UserInfo or management APIs. They receive
+neither ID tokens nor refresh tokens.
+
+```sh
+curl --user "$CLIENT_ID:$CLIENT_SECRET" "$ISSUER/token" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode resource=https://api.example.com \
+  --data-urlencode scope=read
+curl --user "$RESOURCE_CLIENT_ID:$RESOURCE_CLIENT_SECRET" "$ISSUER/introspect" \
+  --data-urlencode "token=$ACCESS_TOKEN"
+curl --user "$CLIENT_ID:$CLIENT_SECRET" "$ISSUER/revoke" \
+  --data-urlencode "token=$ACCESS_TOKEN"
+```
+
+The examples use clients registered for `client_secret_basic`. Resource-server
+clients need explicit introspection permission and allowed audiences; ownership
+of a token alone does not grant inspection authority. Authorized callers may
+inspect other clients' access tokens for permitted audiences. Invalid, expired,
+revoked, unknown, or out-of-audience tokens return only `{"active":false}`.
+Resource servers must enforce audience and scopes and consult introspection;
+revocation cannot invalidate an independently cached positive result immediately.
+Refresh inspection additionally requires explicit permission and the issuing
+client's authentication. Token hints are advisory and never grant authority.
+
+Revocation returns HTTP 200 with an empty body for unknown, already revoked, or
+foreign-client tokens. Revoking an access token leaves its refresh family intact.
+Revoking any refresh credential, including a consumed one, revokes its whole
+family and associated access tokens. Eligible public clients send `client_id`
+and their own token. `/introspect` is confidential-client-only.
+
+### Rotating refresh tokens
+
+Refresh is disabled by default. Enable it globally, register both
+`authorization_code` and `refresh_token` on the client, and enable offline access
+in its OAuth permissions. Request `scope=openid offline_access` (plus desired
+profile scopes) and **`prompt=consent`** in the existing PKCE authorization flow.
+The user must approve offline access. Ordinary code exchanges without that scope
+still issue only access and ID tokens.
+
+```sh
+curl "$ISSUER/token" \
+  --data-urlencode grant_type=refresh_token \
+  --data-urlencode "client_id=$PUBLIC_CLIENT_ID" \
+  --data-urlencode "refresh_token=$REFRESH_TOKEN"
+```
+
+Confidential clients must also authenticate. Each successful refresh returns a
+new access token and replacement refresh token, without an ID token or a new
+browser session. Omitted scope retains the current scopes; explicit scope can
+only narrow them, permanently. Resource cannot change. The original sign-in time
+and absolute expiry never advance; rotation extends inactivity only up to the
+absolute deadline.
+
+Serialize refresh calls. Reuse of a consumed credential revokes the whole family,
+including the winning token in a concurrent exchange. There is no grace window;
+after an ambiguous lost response, sign in again instead of retrying the old
+credential. Hashed replay evidence survives restart and is retained through the
+family's maximum lifetime plus its possible access-token lifetime.
+
+Logout ends the browser session but preserves approved offline grants. Account
+security changes, client/policy changes, consent revocation, and explicit family
+revocation invalidate them. Disabling global refresh blocks exchange but does not
+revoke stored families; administrators can revoke them in **Activity → Refresh
+tokens** to prevent reuse after re-enabling. Activity loads page 1 automatically,
+uses 10 rows per page, and displays safe IDs, family, subject, grant, audience,
+absolute/idle expiry, and lifecycle status. Consumed/expired items cannot be
+revoked from the admin UI; the protocol revocation endpoint remains idempotent.
+
+### Legacy password grant
+
+`oauth.passwordGrantEnabled` defaults to false. This optional legacy grant is
+prohibited by current OAuth security best practice (RFC 9700); prefer authorization
+code with PKCE. It requires a confidential client registered for `password`,
+explicit password/grant/resource permissions, and user resource entitlements in
+**User detail → OAuth resource access**. An app admin role confers no OAuth scopes.
+The username is the account email. The grant issues only a resource access token,
+without an ID token, refresh token, session, or consent record. Verification uses
+the existing password hash, generic failures, bounded concurrency, rate limits,
+and an atomic account/policy recheck. MFA is not implemented; this grant must not
+be used to bypass a future required interactive authentication policy.
+
+Administrative settings APIs (admin session and CSRF for writes):
+
+- `GET /api/admin/oauth`: configured resources and global grant flags.
+- `GET/PUT /api/admin/clients/{id}/oauth-policy`: client permissions.
+- `GET/PUT /api/admin/users/{id}/oauth-access`: user resource entitlements.
+
+These permissions are separate from client registration metadata and user
+profile claims. Dynamic clients receive none automatically. Saving permissions
+invalidates existing affected grants. Data migrates to identity schema version 4;
+legacy OIDC access tokens retain their UserInfo behavior and gain no refresh or
+resource authority. Future storage adapters must preserve the serializable
+issuance, rotation, revocation, and rollback contract in `identity.Store`.

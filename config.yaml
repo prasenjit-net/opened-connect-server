@@ -31,3 +31,14 @@ ui:
 oidc:
   enabled: true
   issuer: http://localhost:8080
+  refreshMaxTTL: 720h
+  refreshInactivityTTL: 168h
+  registrationEnabled: true
+
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: true
+  resources:
+    - audience: https://api.example.com
+      enabled: true
+      scopes: [read, write]

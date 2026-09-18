@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"slices"
@@ -204,9 +205,20 @@ func (s *Service) CheckInitialToken(ctx context.Context, token string) error {
 func dynamicMetadata(input ClientMetadata, allowHTTP bool) (ClientMetadata, error) {
 	fail := func(code, msg string) (ClientMetadata, error) { return nil, &RegistrationError{code, msg} }
 	filtered := ClientMetadata{}
+	var grants []string
+	_ = json.Unmarshal(input["grant_types"], &grants)
+	if len(grants) > 0 && !slices.Contains(grants, "authorization_code") {
+		return fail("invalid_client_metadata", "OIDC registration requires authorization_code; OAuth-only clients must be created by an admin.")
+	}
+	for _, g := range grants {
+		if g == "client_credentials" || g == "password" {
+			return fail("invalid_client_metadata", "Machine and password grants require admin registration.")
+		}
+	}
+
 	for k, v := range input {
 		base, _, _ := strings.Cut(k, "#")
-		if slices.Contains(strings.Fields("client_id client_secret client_id_issued_at client_secret_expires_at registration_access_token registration_client_uri origin registration_origin registration_token_active registration_token_issued_at registration_initial_token_id has_client_secret updated_at protocol_compatible protocol_incompatibilities role admin"), k) {
+		if slices.Contains(strings.Fields("client_id client_secret client_id_issued_at client_secret_expires_at registration_access_token registration_client_uri origin registration_origin registration_token_active registration_token_issued_at registration_initial_token_id has_client_secret updated_at protocol_compatible protocol_incompatibilities role admin oauth_policy oauthPolicy resources refreshEnabled passwordEnabled introspectionEnabled grants"), k) {
 			return fail("invalid_client_metadata", "Server-owned metadata cannot be supplied: "+k)
 		}
 		if slices.Contains(clientStringFields, base) || slices.Contains(clientArrayFields, k) || slices.Contains([]string{"jwks", "default_max_age", "require_auth_time"}, k) {

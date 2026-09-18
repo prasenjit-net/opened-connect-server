@@ -46,6 +46,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, servi
 	})
 	r.Route("/admin", func(r chi.Router) {
 		r.Use(auth.authenticated, auth.admin)
+		r.Get("/oauth", auth.oauthSettings)
+		r.Get("/clients/{id}/oauth-policy", auth.oauthPolicy)
+		r.Put("/clients/{id}/oauth-policy", auth.oauthPolicy)
+		r.Get("/users/{id}/oauth-access", auth.oauthAccess)
+		r.Put("/users/{id}/oauth-access", auth.oauthAccess)
 		r.Get("/activity/overview", auth.overview)
 		r.Get("/activity/{kind}", auth.activity)
 		r.Post("/activity/{kind}/{id}/revoke", auth.revokeActivity)

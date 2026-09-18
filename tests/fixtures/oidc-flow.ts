@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { BASE_URL } from "./constants";
 
 export interface AuthorizeParams {
@@ -41,7 +41,10 @@ export function buildAuthorizeUrl(params: AuthorizeParams): string {
 export async function fillLoginForm(page: Page, email: string, password: string): Promise<void> {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
+  const response = page.waitForResponse(res => new URL(res.url()).pathname === "/api/auth/login" && res.request().method() === "POST");
   await page.getByRole("button", { name: "Sign in" }).click();
+  const login = await response;
+  expect(login.status(), `Login failed (${login.status()}). Repeated suites can hit the per-IP login limit; wait for its window or restart only your disposable test server.`).toBe(200);
 }
 
 /** Reads a query parameter off the page's current URL — used to inspect the

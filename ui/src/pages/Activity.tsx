@@ -7,14 +7,15 @@ import ActivityTable from "../components/ActivityTable";
 import { useToast } from "../context/ToastContext";
 
 const consequences: Record<ActivityKind, string> = {
+ refresh: "This revokes the entire refresh-token family and all access tokens issued from it.",
  transactions: "This cancels the active transaction and prevents it from completing.",
  codes: "This prevents this unused authorization code from being exchanged.",
- tokens: "This immediately blocks this access token from UserInfo. Already-issued ID tokens remain valid until expiry.",
+ tokens: "This immediately makes this access token inactive. Resource servers must check introspection to enforce revocation. Already-issued ID tokens remain valid until expiry.",
  consents: "This revokes consent, pending requests, authorization codes, and access tokens for this user and client. A future sign-in requires consent again.",
 };
 export default function ActivityPage({ kind }: { kind: ActivityKind }) {
- const [draft, setDraft] = useState({ q: "", status: "" });
- const [filters, setFilters] = useState({ q: "", status: "", page: 1 });
+ const [draft, setDraft] = useState({ q: "", status: "", grantType: "", audience: "" });
+ const [filters, setFilters] = useState({ q: "", status: "", grantType: "", audience: "", page: 1 });
  const [selected, setSelected] = useState<ActivityRecord | null>(null);
  const confirmation = useRef<HTMLElement>(null);
  useEffect(() => { if (selected) confirmation.current?.focus(); }, [selected]);
@@ -37,7 +38,8 @@ export default function ActivityPage({ kind }: { kind: ActivityKind }) {
   <section className="card">
    <form className="mb-4 flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); setFilters({ ...draft, page: 1 }); }}>
     <label className="flex min-w-48 flex-1 flex-col gap-1.5 text-sm font-medium">Search activity<input type="search" className="input" placeholder="Client, user, email, or record ID" maxLength={254} value={draft.q} onChange={e => setDraft({ ...draft, q: e.target.value })} /></label>
-    <label className="flex flex-col gap-1.5 text-sm font-medium">Status<select className="input" value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}><option value="">All statuses</option>{["active", "revoked", "expired", ...(kind === "transactions" ? ["completed"] : kind === "codes" ? ["consumed"] : [])].map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+    <label className="flex flex-col gap-1.5 text-sm font-medium">Status<select className="input" value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}><option value="">All statuses</option>{["active", "revoked", "expired", ...(kind === "transactions" ? ["completed"] : kind === "codes" || kind === "refresh" ? ["consumed"] : [])].map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+    {(kind === "tokens" || kind === "refresh") && <><label className="flex flex-col gap-1.5 text-sm font-medium">Grant type<select className="input" value={draft.grantType} onChange={e => setDraft({ ...draft, grantType: e.target.value })}><option value="">All grants</option>{["authorization_code", "client_credentials", "password", "refresh_token"].map(g => <option key={g}>{g}</option>)}</select></label><label className="flex min-w-48 flex-col gap-1.5 text-sm font-medium">Audience<input className="input" value={draft.audience} maxLength={2048} placeholder="Exact resource audience" onChange={e => setDraft({ ...draft, audience: e.target.value })} /></label></>}
     <button className="btn btn-primary" disabled={query.isFetching}>Search</button>
     <button type="button" className="btn btn-secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh</button>
    </form>
@@ -48,7 +50,7 @@ export default function ActivityPage({ kind }: { kind: ActivityKind }) {
    </>}
   </section>
   {selected && <section ref={confirmation} tabIndex={-1} role="dialog" aria-modal="false" aria-labelledby="revoke-title" className="card border border-err">
-   <h2 id="revoke-title" className="text-lg font-semibold">Confirm revocation</h2><p className="my-3 text-sm">{consequences[kind]}</p><p className="mb-3 break-all text-xs text-ink-muted">{selected.clientName || selected.clientId} · {selected.userEmail || selected.userId || "Awaiting sign-in"} · {selected.id}</p>
+   <h2 id="revoke-title" className="text-lg font-semibold">Confirm revocation</h2><p className="my-3 text-sm">{consequences[kind]}</p><p className="mb-3 break-all text-xs text-ink-muted">{selected.clientName || selected.clientId} · {selected.subjectKind === "client" ? "Machine client" : selected.userEmail || selected.userId || "Awaiting sign-in"} · {selected.id}</p>
    {revoke.error && <p role="alert" className="mb-3 text-err">{revoke.error.message}</p>}
    <div className="flex gap-2"><button className="btn btn-danger" disabled={revoke.isPending || (revoke.error instanceof ApiError && revoke.error.code === "ACTIVITY_NOT_ACTIVE")} onClick={() => revoke.mutate(selected)}>{revoke.isPending ? "Revoking…" : "Confirm revoke"}</button><button className="btn btn-secondary" disabled={revoke.isPending} onClick={() => setSelected(null)}>Cancel</button></div>
   </section>}

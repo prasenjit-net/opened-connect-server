@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,11 +14,12 @@ import (
 var errInvalidGrant = errors.New("invalid or expired authorization code")
 
 type tokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in"`
-	IDToken     string `json:"id_token"`
-	Scope       string `json:"scope"`
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	IDToken      string `json:"id_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Scope        string `json:"scope"`
 }
 
 // TokenHandler implements POST /token for the authorization_code grant.
@@ -25,37 +27,35 @@ type tokenResponse struct {
 // rule), and every response is an OAuth-shaped error or a no-store token
 // response — never internal/api's management JSON envelope.
 func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.allowTraffic(w, r, "token") {
+	form, client, ok := s.oauthRequest(w, r)
+	if !ok {
 		return
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "Use POST.")
+	switch form.Get("grant_type") {
+	case "authorization_code":
+	case "client_credentials":
+		s.issueResourceToken(w, r, form, client)
 		return
-	}
-	form, err := parseProtocolForm(r)
-	if err != nil {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Malformed, duplicate, or oversized form parameters.")
-		return
-	}
-
-	client, err := s.authenticateClient(r, form)
-	if err != nil {
-		if errors.Is(err, ErrClientAuthConflict) {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Conflicting client authentication methods.")
+	case "password":
+		if s.Config.PasswordGrantEnabled {
+			s.issueResourceToken(w, r, form, client)
 			return
 		}
-		status := http.StatusUnauthorized
-		if errors.Is(err, ErrClientAuthLimited) {
-			status = http.StatusTooManyRequests
+		writeOAuthError(w, 400, "unsupported_grant_type", "Password grant is disabled.")
+		return
+	case "refresh_token":
+		if s.Config.RefreshTokensEnabled {
+			s.refreshToken(w, r, form, client)
+			return
 		}
-		w.Header().Set("WWW-Authenticate", `Basic realm="oidc"`)
-		writeOAuthError(w, status, "invalid_client", "Client authentication failed.")
+		writeOAuthError(w, 400, "unsupported_grant_type", "Refresh tokens are disabled.")
+		return
+	default:
+		writeOAuthError(w, 400, "unsupported_grant_type", "Unsupported grant type.")
 		return
 	}
-
-	if form.Get("grant_type") != "authorization_code" {
-		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "Only authorization_code is supported.")
+	if form.Has("resource") {
+		writeOAuthError(w, 400, "invalid_target", "Authorization codes are bound to UserInfo.")
 		return
 	}
 	code := form.Get("code")
@@ -68,15 +68,21 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	codeHash := hashToken(code)
 	var scopes []string
-	var accessToken, idToken string
+	var accessToken, idToken, refreshToken, familyID string
 	replay := false
 	txErr := s.Store.Write(r.Context(), func(tx identity.Tx) error {
 		now := s.Now()
 		record, err := tx.AuthorizationCode(codeHash)
+		if err != nil && !errors.Is(err, identity.ErrNotFound) {
+			return err
+		}
 		if err != nil || record.Revoked || record.ClientID != client.ID || record.RedirectURI != redirectURI || VerifyPKCE(verifier, record.CodeChallenge) != nil {
 			return errInvalidGrant
 		}
 		current, err := tx.Client(client.ID)
+		if err != nil && !errors.Is(err, identity.ErrNotFound) {
+			return err
+		}
 		if err != nil || !identity.RuntimeClient(current).Compatible || current.UpdatedAt.UnixNano() != client.UpdatedAt || !current.UpdatedAt.Equal(record.ClientUpdatedAt) {
 			return errInvalidGrant
 		}
@@ -91,6 +97,9 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 			return errInvalidGrant
 		}
 		user, err := tx.User(record.UserID)
+		if err != nil && !errors.Is(err, identity.ErrNotFound) {
+			return err
+		}
 		if err != nil || !user.Active {
 			return errInvalidGrant
 		}
@@ -105,8 +114,16 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		scopes = record.Scopes
 		record.Consumed = true
 		record.RetainUntil = now.Add(s.Config.AccessTokenTTL)
+		if slices.Contains(scopes, "offline_access") {
+			refreshToken, familyID, err = s.initialRefresh(tx, client.ID, record, now)
+			if err != nil {
+				return err
+			}
+			family, _ := tx.RefreshFamily(familyID)
+			record.RetainUntil = family.RetainUntil
+		}
 		tx.SaveAuthorizationCode(record)
-		tx.SaveAccessToken(identity.AccessToken{IDTokenExpiresAt: now.Add(s.Config.IDTokenTTL), Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
+		tx.SaveAccessToken(identity.AccessToken{GrantType: "authorization_code", SubjectKind: "user", FamilyID: familyID, IDTokenExpiresAt: now.Add(s.Config.IDTokenTTL), Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
 		tx.PruneOIDCState(now)
 		return nil
 	})
@@ -115,7 +132,7 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if txErr != nil {
-		writeOAuthError(w, http.StatusInternalServerError, "server_error", "Unable to issue tokens.")
+		writeOAuthError(w, http.StatusServiceUnavailable, "server_error", "Unable to issue tokens.")
 		return
 	}
 
@@ -127,10 +144,11 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(tokenResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   int64(s.Config.AccessTokenTTL.Seconds()),
-		IDToken:     idToken,
-		Scope:       strings.Join(scopes, " "),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(s.Config.AccessTokenTTL.Seconds()),
+		IDToken:      idToken,
+		Scope:        strings.Join(scopes, " "),
 	})
 }

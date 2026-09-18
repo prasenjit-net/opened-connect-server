@@ -14,7 +14,7 @@ vi.mock("./context/ThemeContext", () => ({ useTheme: () => ({ mode: "light", set
 const admin: User = { id: "admin", name: "Admin", email: "admin@example.com", role: "admin", active: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 const record: ActivityRecord = { id: "safe-record-id", kind: "tokens", status: "active", clientId: "portal", clientName: "Portal", userId: "alice", userEmail: "alice@example.com", scopes: ["openid", "profile"], createdAt: "2026-09-16T12:00:00Z", expiresAt: "2026-09-16T13:00:00Z", canRevoke: true };
 const counts = { total: 12, active: 8, revoked: 2, expired: 1, completed: 1, consumed: 0 };
-const overview: ActivityOverview = { generatedAt: "2026-09-16T12:00:00Z", protocolEnabled: true, users: 5, clients: 3, counts: { transactions: counts, codes: counts, tokens: counts, consents: counts }, recent: [record] };
+const overview: ActivityOverview = { generatedAt: "2026-09-16T12:00:00Z", protocolEnabled: true, users: 5, clients: 3, counts: { transactions: counts, codes: counts, tokens: counts, consents: counts, refresh: counts }, recent: [record] };
 function setup(path: string) {
  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  const testRouter = createRouter({ routeTree: router.routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
@@ -40,10 +40,10 @@ describe("admin activity monitoring", () => {
   expect(await screen.findByText("5 users")).toBeInTheDocument();
   expect(screen.getByText("3 clients")).toBeInTheDocument();
   expect(screen.getByText("OpenID Connect enabled")).toBeInTheDocument();
-  expect(screen.getAllByText("8")).toHaveLength(4);
+  expect(screen.getAllByText("8")).toHaveLength(5);
   await userEvent.click(screen.getByRole("link", { name: /Access tokens 8 active/ }));
   expect(await screen.findByLabelText("Search activity")).toBeInTheDocument();
-  expect(api.activity).toHaveBeenCalledWith("tokens", { q: "", status: "", page: 1 }, expect.any(AbortSignal));
+  expect(api.activity).toHaveBeenCalledWith("tokens", { q: "", status: "", grantType: "", audience: "", page: 1 }, expect.any(AbortSignal));
  });
  it("filters only on submission and paginates with submitted values", async () => {
   setup("/activity/tokens");
@@ -52,10 +52,10 @@ describe("admin activity monitoring", () => {
   await userEvent.selectOptions(screen.getByLabelText("Status"), "active");
   expect(api.activity).toHaveBeenCalledTimes(1);
   await userEvent.click(screen.getByRole("button", { name: "Search" }));
-  await waitFor(() => expect(api.activity).toHaveBeenLastCalledWith("tokens", { q: "Alice", status: "active", page: 1 }, expect.any(AbortSignal)));
+  await waitFor(() => expect(api.activity).toHaveBeenLastCalledWith("tokens", { q: "Alice", status: "active", grantType: "", audience: "", page: 1 }, expect.any(AbortSignal)));
   await userEvent.type(screen.getByLabelText("Search activity"), " unsubmitted");
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
-  await waitFor(() => expect(api.activity).toHaveBeenLastCalledWith("tokens", { q: "Alice", status: "active", page: 2 }, expect.any(AbortSignal)));
+  await waitFor(() => expect(api.activity).toHaveBeenLastCalledWith("tokens", { q: "Alice", status: "active", grantType: "", audience: "", page: 2 }, expect.any(AbortSignal)));
   expect(await screen.findByText("11 records · Page 2 of 2 · 10 per page")).toBeInTheDocument();
  });
  it("confirms revocation and refreshes the list and dashboard cache", async () => {

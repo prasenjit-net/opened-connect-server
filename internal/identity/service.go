@@ -13,10 +13,11 @@ import (
 )
 
 type Service struct {
-	store     Store
-	ttl       time.Duration
-	dummyHash string
-	now       func() time.Time
+	oauthResources []Resource
+	store          Store
+	ttl            time.Duration
+	dummyHash      string
+	now            func() time.Time
 }
 type Principal struct {
 	User    Profile
@@ -437,4 +438,12 @@ func (s *Service) ChangePassword(ctx context.Context, hash, current, password st
 		tx.DeleteUserSessions(u.ID)
 		return nil
 	})
+}
+
+// ConfigureOAuthResources sets the trusted registry before serving requests.
+func (s *Service) ConfigureOAuthResources(resources []Resource) {
+	s.oauthResources = make([]Resource, len(resources))
+	for i, r := range resources {
+		s.oauthResources[i] = Resource{Audience: r.Audience, Enabled: r.Enabled, Scopes: append([]string{}, r.Scopes...)}
+	}
 }

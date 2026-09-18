@@ -8,7 +8,8 @@ import { ADMIN_CSRF_PATH, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_STORAGE_STATE_PATH,
 // and persists the session cookie + CSRF token so every spec can build an
 // authenticated admin client without repeating a login.
 export default async function globalSetup() {
-  fs.mkdirSync(AUTH_DIR, { recursive: true });
+  fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 });
+  fs.chmodSync(AUTH_DIR, 0o700);
 
   const ctx = await request.newContext({ baseURL: BASE_URL });
   try {
@@ -35,8 +36,9 @@ export default async function globalSetup() {
     if (session.user.role !== "admin") {
       throw new Error(`${ADMIN_EMAIL} signed in but is not an administrator on ${BASE_URL}.`);
     }
-    fs.writeFileSync(ADMIN_CSRF_PATH, JSON.stringify({ csrfToken: session.csrfToken }, null, 2));
+    fs.writeFileSync(ADMIN_CSRF_PATH, JSON.stringify({ csrfToken: session.csrfToken }, null, 2), { mode: 0o600 });
     await ctx.storageState({ path: ADMIN_STORAGE_STATE_PATH });
+    fs.chmodSync(ADMIN_STORAGE_STATE_PATH, 0o600);
   } finally {
     await ctx.dispose();
   }

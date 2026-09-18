@@ -58,6 +58,10 @@ type AuthorizationCode struct {
 // replay of that code (which must otherwise already fail safely) can also
 // revoke the token issued from the original, legitimate exchange.
 type AccessToken struct {
+	GrantType        string    `json:"grantType,omitempty"`
+	SubjectKind      string    `json:"subjectKind,omitempty"`
+	FamilyID         string    `json:"familyId,omitempty"`
+	OriginalGrant    string    `json:"originalGrant,omitempty"`
 	IDTokenExpiresAt time.Time `json:"idTokenExpiresAt,omitempty"`
 	Hash             string    `json:"hash"`
 	ClientID         string    `json:"clientId"`

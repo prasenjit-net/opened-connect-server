@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
+	OAuth   OAuthConfig   `mapstructure:"oauth" yaml:"oauth"`
 	Storage StorageConfig `mapstructure:"storage" yaml:"storage"`
 	Auth    AuthConfig    `mapstructure:"auth" yaml:"auth"`
 	App     AppConfig     `mapstructure:"app" yaml:"app"`
@@ -20,6 +22,12 @@ type Config struct {
 	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
 	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
 	OIDC    OIDCConfig    `mapstructure:"oidc" yaml:"oidc"`
+}
+
+type OAuthConfig struct {
+	PasswordGrantEnabled bool                `mapstructure:"passwordGrantEnabled" yaml:"passwordGrantEnabled"`
+	RefreshTokensEnabled bool                `mapstructure:"refreshTokensEnabled" yaml:"refreshTokensEnabled"`
+	Resources            []identity.Resource `mapstructure:"resources" yaml:"resources"`
 }
 
 type StorageConfig struct {
@@ -58,9 +66,7 @@ type UIConfig struct {
 }
 
 // OIDCConfig configures the OpenID Connect provider surface (discovery,
-// JWKS, /authorize, /token, /userinfo). RefreshMaxTTL and
-// RefreshInactivityTTL are reserved for the future refresh-token milestone
-// and are not yet enforced.
+// JWKS, /authorize, /token, /userinfo) and refresh-token lifetime bounds.
 type OIDCConfig struct {
 	RegistrationEnabled  bool          `mapstructure:"registrationEnabled" yaml:"registrationEnabled"`
 	AllowedOrigins       []string      `mapstructure:"allowedOrigins" yaml:"allowedOrigins"`
@@ -127,6 +133,9 @@ func (s ServerConfig) Address() string {
 
 func SetDefaults(v *viper.Viper) {
 	defaults := Default()
+	v.SetDefault("oauth.passwordGrantEnabled", false)
+	v.SetDefault("oauth.refreshTokensEnabled", false)
+	v.SetDefault("oauth.resources", []identity.Resource{})
 	v.SetDefault("storage.dataDir", defaults.Storage.DataDir)
 	v.SetDefault("auth.sessionTTL", defaults.Auth.SessionTTL)
 	v.SetDefault("auth.cookieSecure", defaults.Auth.CookieSecure)
@@ -187,6 +196,23 @@ func Load(v *viper.Viper) (Config, error) {
 			return Config{}, fmt.Errorf("app.url must use HTTPS outside development; terminate TLS at your reverse proxy")
 		}
 		cfg.Auth.CookieSecure = true
+	}
+	if (cfg.OAuth.PasswordGrantEnabled || cfg.OAuth.RefreshTokensEnabled || len(cfg.OAuth.Resources) > 0) && !cfg.OIDC.Enabled {
+		return Config{}, fmt.Errorf("OAuth features require oidc.enabled")
+	}
+	if cfg.OIDC.RefreshMaxTTL <= 0 || cfg.OIDC.RefreshMaxTTL > 365*24*time.Hour || cfg.OIDC.RefreshInactivityTTL <= 0 || cfg.OIDC.RefreshInactivityTTL > cfg.OIDC.RefreshMaxTTL {
+		return Config{}, fmt.Errorf("refresh lifetimes must be positive, inactivity <= maximum, and maximum <= 8760h")
+	}
+	seenResources := map[string]bool{}
+	if len(cfg.OAuth.Resources) > 100 {
+		return Config{}, fmt.Errorf("at most 100 OAuth resources are supported")
+	}
+	for _, r := range cfg.OAuth.Resources {
+		u, e := url.Parse(r.Audience)
+		if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || len(r.Audience) > 2048 || seenResources[r.Audience] || !identity.ValidResourceScopes(r.Scopes) || len(r.Scopes) == 0 {
+			return Config{}, fmt.Errorf("OAuth resources require unique HTTPS audience URIs and valid non-OIDC scopes")
+		}
+		seenResources[r.Audience] = true
 	}
 	if cfg.OIDC.RegistrationEnabled && !cfg.OIDC.Enabled {
 		return Config{}, fmt.Errorf("oidc.registrationEnabled requires oidc.enabled")
@@ -313,8 +339,18 @@ ui:
 #   codeTTL: 60s
 #   accessTokenTTL: 10m
 #   idTokenTTL: 5m
+#   refreshMaxTTL: 720h
+#   refreshInactivityTTL: 168h
 #   keyRotationInterval: 2160h # 90 days
 #   keyOverlapPeriod: 720h # 30 days
+
+# oauth:
+#   refreshTokensEnabled: false
+#   passwordGrantEnabled: false # legacy; contrary to OAuth security BCP
+#   resources:
+#     - audience: https://api.example.com
+#       enabled: true
+#       scopes: [items:read, items:write]
 `
 
 const DefaultEnvExample = `APP_APP_ENV=development

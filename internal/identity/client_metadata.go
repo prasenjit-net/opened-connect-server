@@ -87,7 +87,13 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 			return fail("Unsupported or read-only client metadata field: " + key)
 		}
 	}
+	var suppliedGrants []string
+	_ = json.Unmarshal(input["grant_types"], &suppliedGrants)
+	oauthOnly := len(suppliedGrants) > 0 && !slices.Contains(suppliedGrants, "authorization_code") && !slices.Contains(suppliedGrants, "implicit")
 	defaults := map[string]any{"application_type": "web", "response_types": []string{"code"}, "grant_types": []string{"authorization_code"}, "token_endpoint_auth_method": "client_secret_basic", "id_token_signed_response_alg": "RS256", "require_auth_time": false}
+	if oauthOnly {
+		defaults["response_types"] = []string{}
+	}
 	for k, v := range defaults {
 		if _, ok := m[k]; !ok {
 			m.set(k, v)
@@ -108,12 +114,12 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 		return fail("At least one grant type is required.")
 	}
 	for _, g := range grants {
-		if !slices.Contains(strings.Fields("authorization_code implicit refresh_token"), g) {
+		if !slices.Contains(strings.Fields("authorization_code implicit refresh_token client_credentials password"), g) {
 			return fail("Unsupported OpenID Connect grant type.")
 		}
 	}
 	responses := m.list("response_types")
-	if len(responses) == 0 {
+	if len(responses) == 0 && !oauthOnly {
 		return fail("At least one response type is required.")
 	}
 	for _, r := range responses {
@@ -134,7 +140,7 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 		}
 	}
 	redirects := m.list("redirect_uris")
-	if len(redirects) == 0 {
+	if len(redirects) == 0 && !oauthOnly {
 		return failRedirect("At least one redirect URI is required.")
 	}
 	hosts := map[string]bool{}

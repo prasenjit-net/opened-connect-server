@@ -65,6 +65,12 @@ type Session struct {
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	OAuthPolicy(id string) OAuthPolicy
+	OAuthAccess(id string) OAuthAccess
+	RefreshFamily(id string) (RefreshFamily, error)
+	RefreshToken(hash string) (RefreshToken, error)
+	ListRefreshFamilies() []RefreshFamily
+	ListRefreshTokens() []RefreshToken
 	InitialTokens() []InitialAccessToken
 	InitialToken(hash string) (InitialAccessToken, error)
 	RegistrationToken(clientID string) (RegistrationAccessToken, error)
@@ -92,6 +98,11 @@ type ReadTx interface {
 // DeleteClient must also delete its registration access token. Registration-token
 // replacement is independent of SaveClient and must not invalidate user grants.
 type Tx interface {
+	SaveOAuthPolicy(id string, policy OAuthPolicy)
+	SaveOAuthAccess(id string, access OAuthAccess)
+	SaveRefreshFamily(RefreshFamily)
+	SaveRefreshToken(RefreshToken)
+	RevokeRefreshFamily(id string)
 	SaveInitialToken(InitialAccessToken)
 	SaveRegistrationToken(RegistrationAccessToken)
 	DeleteRegistrationToken(clientID string)
@@ -116,7 +127,15 @@ type Tx interface {
 	PruneOIDCState(now time.Time)
 }
 
-// Store callbacks execute atomically. Write must roll back all changes when the
+// Refresh families and consumed credential hashes must be retained through their
+// replay-retention deadline. RevokeRefreshFamily atomically revokes every linked
+// access token. Security mutations above also revoke affected refresh families.
+// SaveOAuthPolicy invalidates client grants; SaveOAuthAccess invalidates user
+// tokens/families. A revoked consent invalidates its refresh families. Ordinary
+// DeleteSession and registration-token changes leave offline grants unchanged.
+//
+// Store callbacks execute atomically and serializably, including concurrent
+// refresh exchanges and security mutations. Write must roll back all changes when the
 // callback returns an error. Callbacks must not call back into Store.
 type Store interface {
 	Read(context.Context, func(ReadTx) error) error

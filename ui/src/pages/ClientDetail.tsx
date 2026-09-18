@@ -1,3 +1,4 @@
+import { ClientOAuthPermissions } from "../components/OAuthPermissions";
 import ClientRegistrationAccess from "../components/ClientRegistrationAccess";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -53,7 +54,7 @@ export default function ClientDetailPage() {
    </section>
    {!query.data.protocol_compatible && <section role="alert" className="card border border-warn">
     <h2 className="font-semibold text-warn">Not usable with the OpenID Connect protocol endpoints yet</h2>
-    <p className="my-3 text-sm text-ink-muted">This client's registered settings request capabilities this provider does not implement yet. It will be rejected at /authorize and /token until its metadata is adjusted:</p>
+    <p className="my-3 text-sm text-ink-muted">This client's registered settings request capabilities this provider does not implement yet. OpenID Connect sign-in requires these metadata changes. OAuth API grants are controlled separately by OAuth permissions:</p>
     <ul className="list-inside list-disc text-sm text-ink-muted">
      {query.data.protocol_incompatibilities?.map((reason) => <li key={reason}>{reason}</li>)}
     </ul>
@@ -65,6 +66,7 @@ export default function ClientDetailPage() {
     <button className="btn btn-secondary mt-3" onClick={() => setSecret(null)}>Dismiss secret</button>
    </section>}
    <ClientEditor key={clientId} client={query.data} onSave={save} onCancel={() => { void navigate({ to: "/clients" }); }} />
+   <ClientOAuthPermissions id={clientId} grants={query.data.grant_types ?? []} confidential={["client_secret_basic", "client_secret_post"].includes(query.data.token_endpoint_auth_method ?? "client_secret_basic")} />
    <ClientRegistrationAccess key={`registration-${clientId}`} clientId={clientId} active={query.data.registration_token_active === true} onChanged={(active) => cache.setQueryData(["client", clientId], { ...query.data, registration_token_active: active })} />
    <section className="card">
     <h2 className="mb-3 font-semibold">Client credentials and deletion</h2>
