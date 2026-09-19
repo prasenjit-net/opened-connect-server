@@ -33,8 +33,8 @@ function requireEnv(name: string): string {
   if (!value) {
     throw new Error(
       `${name} is required. Copy tests/.env.example to tests/.env and fill in a real admin account on the target server ` +
-        `(or set E2E_BASE_URL/E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD in the shell environment).\n` +
-        `See tests/README.md.`,
+      `(or set E2E_BASE_URL/E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD in the shell environment).\n` +
+      `See tests/README.md.`,
     );
   }
   return value;
