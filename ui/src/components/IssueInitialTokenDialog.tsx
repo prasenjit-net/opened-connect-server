@@ -36,7 +36,7 @@ export default function IssueInitialTokenDialog({ onClose }: { onClose: () => vo
      <label className="flex flex-col gap-1.5 text-sm">Lifetime (hours)<input className="input" type="number" min={1} max={720} required value={hours} onChange={e => setHours(Number(e.target.value))} /></label>
     </div>
     {error && <p role="alert" className="text-sm text-err">{error}</p>}
-    <div className="flex flex-wrap gap-2 border-t border-line pt-4"><button className="btn btn-primary" disabled={busy}>{busy ? "Issuing…" : "Issue token"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button></div>
+    <div className="flex flex-wrap gap-2 border-t border-line pt-4"><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? "Issuing…" : "Issue token"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button></div>
    </form>
   </>}
   <Link to="/activity/initial-access-tokens" disabled={busy} className="mt-4 inline-block text-sm text-accent hover:underline aria-disabled:cursor-not-allowed aria-disabled:opacity-50">View initial access token activity</Link>

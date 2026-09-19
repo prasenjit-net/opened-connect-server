@@ -88,7 +88,7 @@ export default function ClientEditor({ client, onSave, onCancel }: {
     </details>}
    </fieldset>)}
    {error && <p role="alert" className="rounded-lg bg-err-soft p-3 text-sm text-err">{error}</p>}
-   <div className="form-actions"><button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : client ? "Save changes" : "Create client"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
+    <div className="form-actions"><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : client ? "Save changes" : "Create client"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
   </form>
  </section>;
 }

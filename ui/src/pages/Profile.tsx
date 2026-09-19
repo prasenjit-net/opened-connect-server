@@ -54,7 +54,7 @@ export default function ProfilePage() {
         </fieldset>
         <ProfileFields value={claims} onChange={setClaims} custom={custom} onCustomChange={setCustom} />
         {profileError && <p role="alert" className="text-sm text-err">{profileError}</p>}
-        <div className="form-actions"><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></div>
+        <div className="form-actions"><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button></div>
       </form>
     </section>
     <section className="card">
@@ -65,7 +65,7 @@ export default function ProfilePage() {
         <label className="flex flex-col gap-1.5 text-sm font-medium">New password<input className="input" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">Confirm new password<input className="input" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>
         {passwordError && <p role="alert" className="text-sm text-err">{passwordError}</p>}
-        <button className="btn btn-primary justify-self-start lg:col-span-3" disabled={changing}>{changing ? "Changing…" : "Change password"}</button>
+        <button type="submit" className="btn btn-primary justify-self-start lg:col-span-3" disabled={changing}>{changing ? "Changing…" : "Change password"}</button>
       </form>
     </section>
   </div>;

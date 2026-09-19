@@ -40,7 +40,7 @@ export default function UserEditor({ user, onSave, onCancel }: { user: User | nu
       </fieldset>
       <ProfileFields value={claims} onChange={(value) => { if (value.phone_number !== claims.phone_number) setPhoneVerified(false); setClaims(value); }} custom={custom} onCustomChange={setCustom} />
       {error && <p role="alert" className="rounded-lg bg-err-soft p-3 text-sm text-err">{error}</p>}
-      <div className="form-actions"><button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : user ? "Save changes" : "Create user"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
+      <div className="form-actions"><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : user ? "Save changes" : "Create user"}</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button></div>
     </form>
   </section>;
 }
