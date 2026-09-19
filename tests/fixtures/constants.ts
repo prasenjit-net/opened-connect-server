@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const TESTS_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -42,7 +43,7 @@ function requireEnv(name: string): string {
 // A unique-per-run suffix so specs that create users/clients never collide
 // with leftovers from a previous run against the same (possibly
 // persistent, not disposable) target server.
-export const RUN_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export const RUN_ID = `${Date.now().toString(36)}-${randomBytes(6).toString("hex")}`;
 
 // A relying-party origin that never resolves on the real network. Every
 // request to it is intercepted and fulfilled locally by Playwright's route
