@@ -53,11 +53,14 @@ func TestOAuthHTTPRefreshAndMachineLifecycle(t *testing.T) {
 	if err = app.identity.SetOAuthPolicy(t.Context(), login.Session.Hash, mid, identity.OAuthPolicy{Grants: []string{"client_credentials"}, Resources: map[string]identity.ResourceScopes{"https://api.example": {Allowed: []string{"read"}, Default: []string{"read"}}}, DefaultResource: "https://api.example", IntrospectionEnabled: true, IntrospectionAudiences: []string{"https://api.example"}}, cfg.OAuth.Resources); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(app.Handler())
+	// Exercise Secure cookies over TLS, matching the browser security contract.
+	srv := httptest.NewTLSServer(app.Handler())
 	defer srv.Close()
 	app.oidc.Config.Issuer = srv.URL
 	jar, _ := cookiejar.New(nil)
-	browser := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	browser := srv.Client()
+	browser.Jar = jar
+	browser.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	csrf := ""
 	call := func(method, path, body, contentType, bearer string) (*http.Response, map[string]any) {
 		t.Helper()
@@ -114,7 +117,14 @@ func TestOAuthHTTPRefreshAndMachineLifecycle(t *testing.T) {
 	}
 	resp, out = call("POST", "/api/user/authorization/"+tx+"/decision", `{"approve":true,"scopes":["openid","profile","offline_access"]}`, "application/json", "")
 	expect(resp, out, 200)
-	redirect, _ := url.Parse(out["redirectTo"].(string))
+	redirectTo, ok := out["redirectTo"].(string)
+	if out["status"] != "complete" || !ok || redirectTo == "" {
+		t.Fatalf("consent did not complete: %v", out)
+	}
+	redirect, err := url.Parse(redirectTo)
+	if err != nil {
+		t.Fatal(err)
+	}
 	code := redirect.Query().Get("code")
 	form := url.Values{"client_id": {id}, "grant_type": {"authorization_code"}, "redirect_uri": {"https://rp.example/cb"}, "code": {code}, "code_verifier": {verifier}}
 	resp, out = call("POST", "/token", form.Encode(), "application/x-www-form-urlencoded", "")

@@ -32,12 +32,16 @@ func TestDynamicRegistrationHTTPAuthorizationCodeFlow(t *testing.T) {
 	if _, err = app.identity.Bootstrap(context.Background(), "Admin", "admin@example.com", "secure test password"); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(app.Handler())
+	// Exercise Secure cookies over TLS, matching the browser security contract.
+	srv := httptest.NewTLSServer(app.Handler())
 	defer srv.Close()
 	// Resolve the test issuer before making any requests. Production uses config.
 	app.oidc.Config.Issuer = srv.URL
 	jar, _ := cookiejar.New(nil)
-	browser := &http.Client{Jar: jar, Timeout: 5 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	browser := srv.Client()
+	browser.Jar = jar
+	browser.Timeout = 5 * time.Second
+	browser.CheckRedirect = func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
 	csrf := ""
 	request := func(method, path, body, contentType, bearer string) (*http.Response, map[string]any) {
 		t.Helper()
@@ -118,7 +122,11 @@ func TestDynamicRegistrationHTTPAuthorizationCodeFlow(t *testing.T) {
 	}
 	resp, body = request("POST", "/api/user/authorization/"+tx+"/decision", `{"approve":true,"scopes":["openid","profile"]}`, "application/json", "")
 	expect(resp, body, 200)
-	callback, err := url.Parse(body["redirectTo"].(string))
+	redirectTo, ok := body["redirectTo"].(string)
+	if body["status"] != "complete" || !ok || redirectTo == "" {
+		t.Fatalf("consent did not complete: %v", body)
+	}
+	callback, err := url.Parse(redirectTo)
 	if err != nil {
 		t.Fatal(err)
 	}
