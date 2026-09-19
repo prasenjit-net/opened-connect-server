@@ -47,10 +47,10 @@ export default function ProfilePage() {
       <div className="card-head"><h2>My profile</h2><Badge tone="accent">{auth.user?.role}</Badge></div>
       <form onSubmit={save} className="flex flex-col gap-6">
         <fieldset className="form-section"><legend className="form-section-title">Account essentials</legend><p className="form-section-description">Manage your display name and sign-in email.</p><div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1.5 text-sm font-medium">Name<input className="input" autoComplete="name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">Email<input className="input" type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">Name<input className="input" autoComplete="name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">Email<input className="input" type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
         </div><p className="mt-4 text-sm leading-relaxed text-ink-muted">Email verified: {auth.user?.email_verified ? "Yes" : "No"} · Phone verified: {auth.user?.phone_number_verified ? "Yes" : "No"}. Changing either value clears its verification. Changing your email also signs you out of all devices and revokes connected app access.</p>
-        <p className="break-all text-xs text-ink-faint">Subject: {auth.user?.sub ?? auth.user?.id} · Updated: {auth.user?.updatedAt}</p>
+          <p className="break-all text-xs text-ink-faint">Subject: {auth.user?.sub ?? auth.user?.id} · Updated: {auth.user?.updatedAt}</p>
         </fieldset>
         <ProfileFields value={claims} onChange={setClaims} custom={custom} onCustomChange={setCustom} />
         {profileError && <p role="alert" className="text-sm text-err">{profileError}</p>}

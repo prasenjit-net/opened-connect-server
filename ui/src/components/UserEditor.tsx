@@ -32,11 +32,11 @@ export default function UserEditor({ user, onSave, onCancel }: { user: User | nu
         <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium">Role<select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}><option value="user">User</option><option value="admin">Admin</option></select></label>
         {user ? <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium">Status<select className="input" value={active ? "active" : "disabled"} onChange={(e) => setActive(e.target.value === "active")}><option value="active">Active</option><option value="disabled">Disabled</option></select></label> : <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium">Initial password<input className="input" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={(e) => setPassword(e.target.value)} /><span className="text-xs font-normal text-ink-faint">12–128 characters. Share it securely with the user.</span></label>}
       </div>
-      <div className="mt-5 flex flex-wrap gap-4 border-t border-line pt-4 text-sm">
-       <label className="flex items-center gap-2"><input type="checkbox" checked={emailVerified} onChange={(e) => setEmailVerified(e.target.checked)} />Email verified</label>
-       <label className="flex items-center gap-2"><input type="checkbox" checked={phoneVerified} disabled={!claims.phone_number} onChange={(e) => setPhoneVerified(e.target.checked)} />Phone number verified</label>
-      </div>
-      {user && <p className="mt-3 text-sm leading-relaxed text-ink-muted">Changing email, role, or status signs this user out of all devices. The last active admin cannot be disabled or demoted.</p>}
+        <div className="mt-5 flex flex-wrap gap-4 border-t border-line pt-4 text-sm">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={emailVerified} onChange={(e) => setEmailVerified(e.target.checked)} />Email verified</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={phoneVerified} disabled={!claims.phone_number} onChange={(e) => setPhoneVerified(e.target.checked)} />Phone number verified</label>
+        </div>
+        {user && <p className="mt-3 text-sm leading-relaxed text-ink-muted">Changing email, role, or status signs this user out of all devices. The last active admin cannot be disabled or demoted.</p>}
       </fieldset>
       <ProfileFields value={claims} onChange={(value) => { if (value.phone_number !== claims.phone_number) setPhoneVerified(false); setClaims(value); }} custom={custom} onCustomChange={setCustom} />
       {error && <p role="alert" className="rounded-lg bg-err-soft p-3 text-sm text-err">{error}</p>}
