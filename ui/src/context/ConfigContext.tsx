@@ -28,7 +28,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         <Logo size={52} />
         <h1 className="text-lg font-semibold">Cannot reach the server</h1>
         <p className="max-w-md text-ink-muted">{message}</p>
-        <button className="btn btn-primary" onClick={() => query.refetch()}>
+        <button type="button" className="btn btn-primary" onClick={() => query.refetch()}>
           Retry
         </button>
       </div>

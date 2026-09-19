@@ -1,8 +1,12 @@
+import InitialAccessTokensPage from "./pages/InitialAccessTokens";
+import ActivityPage from "./pages/Activity";
+import { activityKinds } from "./lib/activity";
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { AdminGuard, AuthGuard } from "./components/AuthGuard";
 import ComponentsPage from "./pages/Components";
 import DashboardPage from "./pages/Dashboard";
 import LoginPage from "./pages/Login";
+import OIDCContinuePage from "./pages/OIDCContinue";
 import { safeRedirect } from "./lib/navigation";
 import NotFoundPage from "./pages/NotFound";
 import ProfilePage from "./pages/Profile";
@@ -25,6 +29,15 @@ const loginRoute = createRoute({
   validateSearch: (search: Record<string, unknown>) => ({ redirect: safeRedirect(search.redirect) }),
   component: LoginPage,
 });
+// A sibling of loginRoute, not nested under protectedRoute: AuthGuard renders
+// the full admin console Layout, which a third-party consent screen must
+// never show. This page manages its own authentication check instead.
+const oidcContinueRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oidc/continue",
+  validateSearch: (search: Record<string, unknown>) => ({ tx: typeof search.tx === "string" ? search.tx : "" }),
+  component: OIDCContinuePage,
+});
 const protectedRoute = createRoute({ getParentRoute: () => rootRoute, id: "authenticated", component: AuthGuard, notFoundComponent: NotFoundPage });
 const dashboardRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/", component: DashboardPage });
 const dashboardAlias = createRoute({ getParentRoute: () => protectedRoute, path: "/dashboard", beforeLoad: () => { throw redirect({ to: "/", replace: true }); } });
@@ -40,10 +53,15 @@ const userDetailRoute = createRoute({ getParentRoute: () => usersRoute, path: "$
 const clientsRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/clients", component: () => <AdminGuard><ClientSearchProvider><Outlet /></ClientSearchProvider></AdminGuard> });
 const clientSearchRoute = createRoute({ getParentRoute: () => clientsRoute, path: "/", component: ClientsPage });
 const clientCreateRoute = createRoute({ getParentRoute: () => clientsRoute, path: "new", component: ClientCreatePage });
+const clientRegistrationRoute = createRoute({ getParentRoute: () => clientsRoute, path: "registration", beforeLoad: () => { throw redirect({ to: "/activity/initial-access-tokens", replace: true }); } });
 const clientDetailRoute = createRoute({ getParentRoute: () => clientsRoute, path: "$clientId", component: ClientDetailPage });
 
+const initialTokensRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/activity/initial-access-tokens", component: () => <AdminGuard><InitialAccessTokensPage /></AdminGuard> });
+
+const activityRoutes = activityKinds.map(kind => createRoute({ getParentRoute: () => protectedRoute, path: `/activity/${kind}`, component: () => <AdminGuard><ActivityPage key={kind} kind={kind} /></AdminGuard> }));
+
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([loginRoute, protectedRoute.addChildren([dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, clientsRoute.addChildren([clientSearchRoute, clientCreateRoute, clientDetailRoute]), usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
+  routeTree: rootRoute.addChildren([loginRoute, oidcContinueRoute, protectedRoute.addChildren([...activityRoutes, initialTokensRoute, dashboardRoute, dashboardAlias, componentsRoute, settingsRoute, profileRoute, clientsRoute.addChildren([clientSearchRoute, clientCreateRoute, clientRegistrationRoute, clientDetailRoute]), usersRoute.addChildren([userSearchRoute, userCreateRoute, userDetailRoute])])]),
   defaultNotFoundComponent: NotFoundPage,
 });
 declare module "@tanstack/react-router" { interface Register { router: typeof router; } }

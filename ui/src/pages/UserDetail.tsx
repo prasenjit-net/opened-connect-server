@@ -1,3 +1,4 @@
+import { UserOAuthPermissions } from "../components/OAuthPermissions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -41,16 +42,17 @@ export default function UserDetailPage() {
     } finally { setDeleting(false); }
   };
 
-  return <div className="flex max-w-[900px] flex-col gap-4">
+  return <div className="flex w-full min-w-0 flex-col gap-4">
     <Link to="/users" className="self-start text-sm text-accent hover:underline">← Back to user search</Link>
     {query.isPending ? <div role="status" className="card flex items-center gap-3"><div className="spinner" />Loading user…</div> : query.isError ? <section className="card" role="alert"><p className="mb-3 text-sm text-err">{query.error.message}</p><button className="btn btn-secondary" onClick={() => void query.refetch()}>Retry</button></section> : <>
       <section className="card">
-        <h2 className="text-lg font-semibold">{query.data.name}</h2>
+        <h2 className="break-words text-lg font-semibold">{query.data.name}</h2>
         <p className="mt-1 break-all text-sm text-ink-muted">{query.data.email}</p>
         <p className="mt-3 break-all text-xs text-ink-faint">Subject: {query.data.sub ?? query.data.id} · Updated: {query.data.updatedAt}</p>
         <p className="mt-3 text-xs text-ink-faint">Created {new Date(query.data.createdAt).toLocaleString()}</p>
       </section>
       <UserEditor key={query.data.id} user={query.data} onSave={save} onCancel={() => { void navigate({ to: "/users" }); }} />
+      <UserOAuthPermissions id={userId} />
       <section className="card">
         <h2 className="mb-3 font-semibold">Delete user</h2>
         {confirmDelete ? <div role="alertdialog" aria-labelledby="delete-title" aria-describedby="delete-description">

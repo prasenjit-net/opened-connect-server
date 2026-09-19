@@ -186,7 +186,7 @@
   }
 
   .input {
-    @apply w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-[0.9rem] text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-[3px] focus:ring-accent-soft focus:outline-none;
+    @apply min-w-0 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-[0.9rem] text-ink transition-colors placeholder:text-ink-faint focus:border-accent focus:ring-[3px] focus:ring-accent-soft focus:outline-none;
   }
 
   .card {
@@ -276,5 +276,34 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Form groups follow the task: everyday settings first, specialist controls later. */
+@layer components {
+  .form-section {
+    @apply min-w-0 rounded-xl border border-line bg-surface p-4 sm:p-5;
+  }
+  .form-section-title {
+    @apply px-2 text-sm font-semibold text-ink;
+  }
+  .form-section-description {
+    @apply mb-5 max-w-3xl text-sm leading-relaxed text-ink-muted;
+  }
+  .form-section > label,
+  .form-section > .form-disclosure {
+    @apply mt-4;
+  }
+  .form-disclosure {
+    @apply min-w-0 rounded-lg bg-surface-2 p-4;
+  }
+  .form-disclosure > summary {
+    @apply cursor-pointer text-sm font-medium;
+  }
+  .form-disclosure > label {
+    @apply mt-4;
+  }
+  .form-actions {
+    @apply sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-line bg-surface py-4;
   }
 }

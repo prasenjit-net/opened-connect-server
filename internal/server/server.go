@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/prasenjit-net/opened-connect-server/internal/api"
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
 	"github.com/prasenjit-net/opened-connect-server/internal/version"
 )
 
@@ -29,6 +32,7 @@ type Options struct {
 
 type App struct {
 	identity *identity.Service
+	oidc     *oidc.Service
 	cfg      config.Config
 	logger   *slog.Logger
 	build    version.Info
@@ -48,7 +52,37 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 	if err != nil {
 		return nil, err
 	}
-	return &App{cfg: cfg, logger: logger, build: build, options: options, identity: auth}, nil
+	auth.ConfigureOAuthResources(cfg.OAuth.Resources)
+	app := &App{cfg: cfg, logger: logger, build: build, options: options, identity: auth}
+	if cfg.OIDC.Enabled {
+		keys, err := oidc.NewFileKeyStore(filepath.Join(cfg.Storage.DataDir, "signing-keys"))
+		if err != nil {
+			return nil, fmt.Errorf("prepare signing key directory: %w", err)
+		}
+		// Load never generates a key: with OIDC enabled, startup must fail
+		// closed on missing/invalid/expired signing material rather than run
+		// with an ephemeral key. Run `init` or `keys rotate` to fix this.
+		if _, err := keys.Load(context.Background()); err != nil {
+			return nil, fmt.Errorf("load signing keys: %w", err)
+		}
+		app.oidc = oidc.New(auth, store, keys, oidc.Config{
+			PasswordGrantEnabled:  cfg.OAuth.PasswordGrantEnabled,
+			RefreshTokensEnabled:  cfg.OAuth.RefreshTokensEnabled,
+			Resources:             cfg.OAuth.Resources,
+			RefreshMaxTTL:         cfg.OIDC.RefreshMaxTTL,
+			RefreshInactivityTTL:  cfg.OIDC.RefreshInactivityTTL,
+			RegistrationEnabled:   cfg.OIDC.RegistrationEnabled,
+			RegistrationAllowHTTP: cfg.App.Env == "development" || cfg.App.Env == "test",
+			Issuer:                cfg.OIDC.Issuer,
+			AllowedOrigins:        cfg.OIDC.AllowedOrigins,
+			TransactionTTL:        cfg.OIDC.TransactionTTL,
+			CodeTTL:               cfg.OIDC.CodeTTL,
+			AccessTokenTTL:        cfg.OIDC.AccessTokenTTL,
+			IDTokenTTL:            cfg.OIDC.IDTokenTTL,
+			CookieSecure:          cfg.Auth.CookieSecure,
+		})
+	}
+	return app, nil
 }
 
 func (a *App) Handler() http.Handler {
@@ -67,7 +101,53 @@ func (a *App) Handler() http.Handler {
 	r.Use(middleware.Heartbeat("/livez"))
 	r.Use(requestLogger(a.logger))
 
-	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build, a.identity))
+	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build, a.identity, a.oidc))
+
+	// Protocol routes are registered directly on the top-level router (not a
+	// wildcard sub-mount) so they take priority over the SPA/dev-proxy
+	// catch-all below, in both hosting modes, without shadowing unrelated
+	// paths. They deliberately sit outside /api's JSON/CSRF middleware.
+	// Reserve protocol paths even for wrong methods, disabled OIDC, or trailing
+	// segments so an OAuth request can never fall through to SPA HTML.
+	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/introspect": "POST", "/revoke": "POST, OPTIONS", "/.well-known/oauth-authorization-server": "GET", "/register/{clientID}": "GET, OPTIONS"} {
+		r.Handle(endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			if a.oidc == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Endpoint is disabled."}`))
+				return
+			}
+			w.Header().Set("Allow", methods)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Unsupported HTTP method."}`))
+		}))
+		r.Handle(endpoint+"/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"Unknown protocol endpoint."}`))
+		}))
+	}
+	if a.oidc != nil {
+		r.Get("/.well-known/openid-configuration", a.oidc.DiscoveryHandler)
+		r.Get("/jwks", a.oidc.JWKSHandler)
+		r.Get("/.well-known/oauth-authorization-server", a.oidc.OAuthMetadataHandler)
+		r.Post("/introspect", a.oidc.IntrospectHandler)
+		r.Post("/revoke", a.oidc.WithCORS(a.oidc.RevokeHandler))
+		r.Options("/revoke", a.oidc.CORSPreflight)
+		r.Get("/authorize", a.oidc.AuthorizeHandler)
+		r.Post("/authorize", a.oidc.AuthorizeHandler)
+		r.Post("/token", a.oidc.WithCORS(a.oidc.TokenHandler))
+		r.Get("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
+		r.Post("/userinfo", a.oidc.WithCORS(a.oidc.UserInfoHandler))
+		r.Post("/register", a.oidc.WithCORS(a.oidc.RegistrationHandler))
+		r.Get("/register/{clientID}", a.oidc.WithCORS(a.oidc.RegistrationReadHandler))
+		r.Options("/register", a.oidc.CORSPreflight)
+		r.Options("/register/{clientID}", a.oidc.CORSPreflight)
+		r.Options("/token", a.oidc.CORSPreflight)
+		r.Options("/userinfo", a.oidc.CORSPreflight)
+	}
 
 	if a.options.DevMode && strings.TrimSpace(a.cfg.UI.DevProxyURL) != "" {
 		r.Handle("/*", newDevProxy(a.cfg.UI.DevProxyURL, a.logger))

@@ -5,19 +5,29 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
+	OAuth   OAuthConfig   `mapstructure:"oauth" yaml:"oauth"`
 	Storage StorageConfig `mapstructure:"storage" yaml:"storage"`
 	Auth    AuthConfig    `mapstructure:"auth" yaml:"auth"`
 	App     AppConfig     `mapstructure:"app" yaml:"app"`
 	Server  ServerConfig  `mapstructure:"server" yaml:"server"`
 	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
 	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
+	OIDC    OIDCConfig    `mapstructure:"oidc" yaml:"oidc"`
+}
+
+type OAuthConfig struct {
+	PasswordGrantEnabled bool                `mapstructure:"passwordGrantEnabled" yaml:"passwordGrantEnabled"`
+	RefreshTokensEnabled bool                `mapstructure:"refreshTokensEnabled" yaml:"refreshTokensEnabled"`
+	Resources            []identity.Resource `mapstructure:"resources" yaml:"resources"`
 }
 
 type StorageConfig struct {
@@ -55,6 +65,23 @@ type UIConfig struct {
 	DevProxyURL  string `mapstructure:"devProxyURL" yaml:"devProxyURL"`
 }
 
+// OIDCConfig configures the OpenID Connect provider surface (discovery,
+// JWKS, /authorize, /token, /userinfo) and refresh-token lifetime bounds.
+type OIDCConfig struct {
+	RegistrationEnabled  bool          `mapstructure:"registrationEnabled" yaml:"registrationEnabled"`
+	AllowedOrigins       []string      `mapstructure:"allowedOrigins" yaml:"allowedOrigins"`
+	Enabled              bool          `mapstructure:"enabled" yaml:"enabled"`
+	Issuer               string        `mapstructure:"issuer" yaml:"issuer"`
+	TransactionTTL       time.Duration `mapstructure:"transactionTTL" yaml:"transactionTTL"`
+	CodeTTL              time.Duration `mapstructure:"codeTTL" yaml:"codeTTL"`
+	AccessTokenTTL       time.Duration `mapstructure:"accessTokenTTL" yaml:"accessTokenTTL"`
+	IDTokenTTL           time.Duration `mapstructure:"idTokenTTL" yaml:"idTokenTTL"`
+	RefreshMaxTTL        time.Duration `mapstructure:"refreshMaxTTL" yaml:"refreshMaxTTL"`
+	RefreshInactivityTTL time.Duration `mapstructure:"refreshInactivityTTL" yaml:"refreshInactivityTTL"`
+	KeyRotationInterval  time.Duration `mapstructure:"keyRotationInterval" yaml:"keyRotationInterval"`
+	KeyOverlapPeriod     time.Duration `mapstructure:"keyOverlapPeriod" yaml:"keyOverlapPeriod"`
+}
+
 func Default() Config {
 	return Config{
 		Storage: StorageConfig{DataDir: "data"},
@@ -82,6 +109,17 @@ func Default() Config {
 			RepoURL:      "https://github.com/prasenjit-net/opened-connect-server",
 			DevProxyURL:  "http://localhost:5173",
 		},
+		OIDC: OIDCConfig{
+			Enabled:              false,
+			TransactionTTL:       10 * time.Minute,
+			CodeTTL:              60 * time.Second,
+			AccessTokenTTL:       10 * time.Minute,
+			IDTokenTTL:           5 * time.Minute,
+			RefreshMaxTTL:        30 * 24 * time.Hour,
+			RefreshInactivityTTL: 7 * 24 * time.Hour,
+			KeyRotationInterval:  90 * 24 * time.Hour,
+			KeyOverlapPeriod:     30 * 24 * time.Hour,
+		},
 	}
 }
 
@@ -95,6 +133,9 @@ func (s ServerConfig) Address() string {
 
 func SetDefaults(v *viper.Viper) {
 	defaults := Default()
+	v.SetDefault("oauth.passwordGrantEnabled", false)
+	v.SetDefault("oauth.refreshTokensEnabled", false)
+	v.SetDefault("oauth.resources", []identity.Resource{})
 	v.SetDefault("storage.dataDir", defaults.Storage.DataDir)
 	v.SetDefault("auth.sessionTTL", defaults.Auth.SessionTTL)
 	v.SetDefault("auth.cookieSecure", defaults.Auth.CookieSecure)
@@ -114,6 +155,18 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("ui.devProxyURL", defaults.UI.DevProxyURL)
 	v.SetDefault("ui.defaultTheme", defaults.UI.DefaultTheme)
 	v.SetDefault("ui.repoURL", defaults.UI.RepoURL)
+
+	v.SetDefault("oidc.enabled", defaults.OIDC.Enabled)
+	v.SetDefault("oidc.registrationEnabled", false)
+	v.SetDefault("oidc.issuer", defaults.OIDC.Issuer)
+	v.SetDefault("oidc.transactionTTL", defaults.OIDC.TransactionTTL)
+	v.SetDefault("oidc.codeTTL", defaults.OIDC.CodeTTL)
+	v.SetDefault("oidc.accessTokenTTL", defaults.OIDC.AccessTokenTTL)
+	v.SetDefault("oidc.idTokenTTL", defaults.OIDC.IDTokenTTL)
+	v.SetDefault("oidc.refreshMaxTTL", defaults.OIDC.RefreshMaxTTL)
+	v.SetDefault("oidc.refreshInactivityTTL", defaults.OIDC.RefreshInactivityTTL)
+	v.SetDefault("oidc.keyRotationInterval", defaults.OIDC.KeyRotationInterval)
+	v.SetDefault("oidc.keyOverlapPeriod", defaults.OIDC.KeyOverlapPeriod)
 }
 
 func Load(v *viper.Viper) (Config, error) {
@@ -143,6 +196,69 @@ func Load(v *viper.Viper) (Config, error) {
 			return Config{}, fmt.Errorf("app.url must use HTTPS outside development; terminate TLS at your reverse proxy")
 		}
 		cfg.Auth.CookieSecure = true
+	}
+	if (cfg.OAuth.PasswordGrantEnabled || cfg.OAuth.RefreshTokensEnabled || len(cfg.OAuth.Resources) > 0) && !cfg.OIDC.Enabled {
+		return Config{}, fmt.Errorf("OAuth features require oidc.enabled")
+	}
+	if cfg.OIDC.RefreshMaxTTL <= 0 || cfg.OIDC.RefreshMaxTTL > 365*24*time.Hour || cfg.OIDC.RefreshInactivityTTL <= 0 || cfg.OIDC.RefreshInactivityTTL > cfg.OIDC.RefreshMaxTTL {
+		return Config{}, fmt.Errorf("refresh lifetimes must be positive, inactivity <= maximum, and maximum <= 8760h")
+	}
+	seenResources := map[string]bool{}
+	if len(cfg.OAuth.Resources) > 100 {
+		return Config{}, fmt.Errorf("at most 100 OAuth resources are supported")
+	}
+	for _, r := range cfg.OAuth.Resources {
+		u, e := url.Parse(r.Audience)
+		if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || len(r.Audience) > 2048 || seenResources[r.Audience] || !identity.ValidResourceScopes(r.Scopes) || len(r.Scopes) == 0 {
+			return Config{}, fmt.Errorf("OAuth resources require unique HTTPS audience URIs and valid non-OIDC scopes")
+		}
+		seenResources[r.Audience] = true
+	}
+	if cfg.OIDC.RegistrationEnabled && !cfg.OIDC.Enabled {
+		return Config{}, fmt.Errorf("oidc.registrationEnabled requires oidc.enabled")
+	}
+	if cfg.OIDC.Enabled {
+		if strings.TrimSpace(cfg.OIDC.Issuer) == "" {
+			cfg.OIDC.Issuer = cfg.App.URL
+		}
+		// Never derive the issuer from a request's Host or forwarded headers;
+		// it is resolved once, here, from trusted configuration only.
+		issuer, err := url.Parse(cfg.OIDC.Issuer)
+		if err != nil || issuer.Host == "" || (issuer.Scheme != "http" && issuer.Scheme != "https") {
+			return Config{}, fmt.Errorf("oidc.issuer must be an absolute HTTP or HTTPS URL")
+		}
+		if issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery || issuer.Fragment != "" || strings.Contains(cfg.OIDC.Issuer, "#") {
+			return Config{}, fmt.Errorf("oidc.issuer must not contain user information, a query, or a fragment")
+		}
+		if cfg.OIDC.RegistrationEnabled && issuer.Scheme == "http" && issuer.Hostname() != "localhost" && issuer.Hostname() != "127.0.0.1" && issuer.Hostname() != "::1" {
+			return Config{}, fmt.Errorf("dynamic registration requires HTTPS or an explicit loopback development issuer")
+		}
+		cfg.OIDC.Issuer = strings.TrimSuffix(cfg.OIDC.Issuer, "/")
+		if issuer.RawPath != "" || (issuer.Path != "" && issuer.Path != "/") {
+			return Config{}, fmt.Errorf("oidc.issuer must not have a path; path-prefixed issuers are not yet supported")
+		}
+		if cfg.App.Env != "development" && cfg.App.Env != "test" && issuer.Scheme != "https" {
+			return Config{}, fmt.Errorf("oidc.issuer must use HTTPS outside development")
+		}
+		for _, origin := range cfg.OIDC.AllowedOrigins {
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.Contains(origin, "#") {
+				return Config{}, fmt.Errorf("oidc.allowedOrigins must contain exact HTTP(S) origins without paths, user information, query, or fragment")
+			}
+			if cfg.App.Env != "development" && cfg.App.Env != "test" && parsed.Scheme != "https" {
+				return Config{}, fmt.Errorf("oidc.allowedOrigins must use HTTPS outside development")
+			}
+		}
+		for name, d := range map[string]time.Duration{
+			"oidc.transactionTTL": cfg.OIDC.TransactionTTL,
+			"oidc.codeTTL":        cfg.OIDC.CodeTTL,
+			"oidc.accessTokenTTL": cfg.OIDC.AccessTokenTTL,
+			"oidc.idTokenTTL":     cfg.OIDC.IDTokenTTL,
+		} {
+			if d <= 0 {
+				return Config{}, fmt.Errorf("%s must be positive", name)
+			}
+		}
 	}
 	return cfg, nil
 }
@@ -213,6 +329,28 @@ ui:
   defaultTheme: auto
   repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173
+
+# oidc:
+#   enabled: false
+#   registrationEnabled: false # token-protected dynamic client registration
+#   issuer: https://identity.example.com # defaults to app.url when unset
+#   allowedOrigins: [] # exact browser client origins, e.g. [https://app.example.com]
+#   transactionTTL: 10m
+#   codeTTL: 60s
+#   accessTokenTTL: 10m
+#   idTokenTTL: 5m
+#   refreshMaxTTL: 720h
+#   refreshInactivityTTL: 168h
+#   keyRotationInterval: 2160h # 90 days
+#   keyOverlapPeriod: 720h # 30 days
+
+# oauth:
+#   refreshTokensEnabled: false
+#   passwordGrantEnabled: false # legacy; contrary to OAuth security BCP
+#   resources:
+#     - audience: https://api.example.com
+#       enabled: true
+#       scopes: [items:read, items:write]
 `
 
 const DefaultEnvExample = `APP_APP_ENV=development

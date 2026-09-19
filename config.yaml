@@ -27,3 +27,20 @@ ui:
   defaultTheme: auto
   repoURL: https://github.com/prasenjit-net/opened-connect-server
   devProxyURL: http://localhost:5173
+
+oidc:
+  enabled: true
+  issuer: http://localhost:8080
+  refreshMaxTTL: 720h
+  refreshInactivityTTL: 168h
+  registrationEnabled: true
+  allowedOrigins:
+    - http://127.0.0.1:9999
+
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: true
+  resources:
+    - audience: https://api.example.com
+      enabled: true
+      scopes: [read, write]

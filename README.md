@@ -6,11 +6,12 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 
 ## What You Get
 
-- `serve`, `init`, and `version` CLI commands
+- `serve`, `init`, `keys`, and `version` CLI commands
 - `chi`-based API routing under `/api`
 - User/admin roles enforced in the API and UI
 - Argon2id passwords and expiring, revocable cookie sessions
 - Local identity storage behind a transactional interface
+- An OpenID Connect provider (authorization code + PKCE, discovery, JWKS, UserInfo) alongside the management API
 - UI configuration at `/api/public/config` and a health check at `/api/public/health`
 - Embedded React build via Go `embed`
 - Development mode with Vite proxy support
@@ -30,6 +31,7 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 │   ├── config/
 │   ├── identity/
 │   ├── logging/
+│   ├── oidc/
 │   ├── server/
 │   └── version/
 ├── ui/
@@ -126,6 +128,7 @@ APP_UI_DEV_PROXY_URL=http://localhost:5173
 - `cmd/app/serve.go`
 - `internal/config/config.go`
 - `internal/server/server.go`
+- `internal/oidc/service.go`
 - `ui/src/router.tsx`
 - `ui/src/components/Layout.tsx`
 
@@ -229,3 +232,255 @@ The server generates immutable `client_id` and `client_id_issued_at`. A `client_
 Clients share the transactional `identity.Store` interface and local `data/identity.json` store. Existing identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data. The encryption key is stored separately in `data/client-secrets.key` (mode 0600); back up both files together. Missing/invalid keys fail closed. Database adapters implement the client transaction methods and their own secret protection.
 
 API routes are grouped by access: `/api/admin/*` requires an administrator, `/api/user/*` provides self-service access to both users and admins, `/api/auth/*` handles authentication (only login is public), and `/api/public/*` supplies public bootstrap/health data. The infrastructure liveness probe remains `/livez`. Former ungrouped API paths return 404; API consumers must use the grouped paths. Browser page URLs are unchanged.
+
+## OpenID Connect provider
+
+Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve an authorization-code OpenID Provider alongside the administration console. `oidc.issuer` defaults to `app.url`; it must be an absolute URL with no path, and HTTPS outside `development`/`test`. Protocol endpoints are mounted at the issuer root, ahead of the SPA/dev-proxy fallback, and never share the management API's JSON/CSRF middleware:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /.well-known/openid-configuration` | Discovery document; public, cacheable, CORS-open |
+| `GET /jwks` | Public signing keys only; never private material |
+| `GET`/`POST /authorize` | Authorization-code requests, PKCE S256 required |
+| `POST /token` | Code exchange; form-encoded, OAuth-shaped errors |
+| `GET`/`POST /userinfo` | Bearer-token claims, scope-gated |
+
+`./build/opened-connect-server init` provisions the RSA 3072-bit signing key and self-signed certificate under `data/signing-keys/` the first time OIDC is enabled, alongside the identity store; rerunning `init` (including `--force`) never replaces a valid existing key, and on an already-initialized install it now provisions only the missing signing material without touching users or passwords. `keys status` reports the active/retired keys and expiry (never private material); `keys rotate` generates and activates a new key while keeping the retired one published in `/jwks` for verification of still-unexpired tokens. `serve` fails closed at startup if OIDC is enabled and the signing material is missing, corrupt, mismatched, or expired — it never falls back to an ephemeral key.
+
+Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
+
+The provider implements OpenID Connect authorization code with required PKCE S256, discovery, opaque access tokens, RS256 ID tokens, and scope-gated UserInfo. OpenID Connect sign-in requires compatible client metadata; unsupported signing, encryption, pairwise subjects, and implicit/hybrid response types are flagged in client detail. Dynamic client registration and OAuth token lifecycle endpoints are described below. RP-initiated logout, request objects, and WebFinger are not implemented. OAuth grants are controlled separately by explicit administrative permissions.
+
+### Authorization-code security and browser clients
+
+Set exact browser client origins for cross-origin `/token` and `/userinfo` calls:
+
+```yaml
+oidc:
+  enabled: true
+  issuer: https://identity.example.com
+  allowedOrigins:
+    - https://app.example.com
+```
+
+The default origin list is empty. Discovery and JWKS remain public; protocol CORS never allows credentials. Issuers are normalized once by removing a trailing slash; user information, query strings, fragments, and path prefixes are rejected.
+
+Authorization requests and token forms are limited to 16 KiB. Duplicate parameters, malformed encoding, conflicting client credentials, and mixed POST query/body parameters are rejected. Each protocol endpoint allows up to 240 requests per peer IP per minute, with separate failed-client-credential limits of 30 per client/peer pair per 15 minutes. Successful authentication does not consume the failed-credential allowance. These in-process limits use the direct peer address; configure source limits at a trusted reverse proxy as well when deploying behind one.
+
+Consent completion and token issuance commit atomically. Authorization-code replay requires correct client, redirect, and PKCE proof before revoking issued access tokens; consumed-code evidence is retained through the access-token lifetime. Forced login and `max_age` are enforced against stored session authentication timestamps. An existing browser binding is reused for additional tabs.
+
+Password, email, role, and active-status changes revoke the user's browser sessions, pending codes/transactions, access tokens, and consent. Client updates, secret rotation, and deletion invalidate that client's protocol state. Updating a login email signs the user out and requires login with the new address. Self-contained ID tokens already delivered to relying parties remain verifiable until their expiry; access-token revocation does not retract those JWTs.
+
+Signing checks certificate validity at issuance and rejects JWT lifetimes extending beyond it. Rotate keys before expiry. Clients requiring signed UserInfo or signed request objects are reported incompatible and cannot silently receive unsigned behavior. Unsupported request objects and response modes return protocol errors. Optional capabilities listed above remain unadvertised.
+
+Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATION_CODE_REVIEW.md](OIDC_AUTHORIZATION_CODE_REVIEW.md). Passing local tests is not OpenID conformance certification.
+
+### Administrative activity monitoring
+
+The admin sidebar has one **Activity** menu entry, with tabs for protocol activity and initial access tokens. Administrators can open `/activity/transactions`, `/activity/codes`, `/activity/tokens`, `/activity/refresh`, and `/activity/consents`. Each page shows retained records with user/client labels, scopes, lifecycle status, creation/expiry times, explicit search and status filters, 10-record pagination, manual refresh, and automatic refresh every 15 seconds. The admin dashboard summarizes these records and shows the 10 newest records plus user/client totals. Regular users receive a personal dashboard and cannot see or request administrative activity.
+
+Monitoring endpoints use the existing admin browser session boundary:
+
+- `GET /api/admin/activity/overview`
+- `GET /api/admin/activity/{transactions|codes|tokens|refresh|consents}?q=...&status=...&grantType=...&audience=...&page=1`
+- `POST /api/admin/activity/{kind}/{id}/revoke` with `{}` and the session CSRF header
+
+The service rechecks admin authorization within the storage transaction. Responses are not cached, contain derived administrative record IDs, and exclude raw tokens, credential hashes, session/browser bindings, OAuth state/nonce, and PKCE material. List operations are part of the storage interface for future database adapters.
+
+Only active items can be revoked. Consumed codes, completed transactions, expired records, and obsolete consents have no revocation action; the API rechecks eligibility atomically and returns HTTP 409 if an item is no longer active. Revoking an active transaction cancels it; revoking an unused code prevents exchange. Revoking an access token blocks further UserInfo use. Revoking consent cancels current transactions, codes, and tokens for that user/client only; subsequent authorization requires a new consent decision. These mutations are atomic with protocol issuance; retries on an already-revoked record are harmless. Consent revocation preserves consumed/completed/expired history while cancelling active grants. Already-delivered signed ID tokens cannot be recalled; newly issued tokens record the ID-token expiry for display in record details.
+
+This is a view of retained protocol state, not a permanent audit log. Normal expiry cleanup and account/client security changes can remove records. Counts are current retained totals rather than lifetime traffic totals. Older records without creation or ID-token-expiry metadata display an unavailable timestamp.
+
+### Dynamic client registration
+
+Dynamic registration is disabled by default. Enable the provider and set
+`oidc.registrationEnabled: true` in server configuration. Discovery then publishes
+`registration_endpoint`. Use HTTPS; loopback HTTP is only for development/tests.
+
+On the **Clients** list, admins can open **Issue initial access token** to create
+an invitation in a modal. Monitor tokens under **Activity → Initial access tokens**,
+with an automatically loaded first page, 15-second refresh, 10 results per page,
+and revocation of unused capacity. Search filters apply when Search is clicked. An invitation
+allows one registration and expires after 24 hours by default. Admins may choose
+1–100 registrations and 1–720 hours. Tokens are displayed once and stored only as
+hashes. No anonymous registration is supported.
+
+Send `POST /register` with `Content-Type: application/json` and
+`Authorization: Bearer <initial-access-token>`, for example this body:
+
+```json
+{
+  "client_name": "Example application",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+Use `none` for a public client using PKCE, or `client_secret_basic` (the default)
+/ `client_secret_post` for a confidential client. The 201 response includes the
+client ID, effective metadata, a secret when applicable, and a per-client
+`registration_access_token` with its `registration_client_uri`. The registered
+client can use the existing authorization-code flow immediately. Unknown
+extension metadata is ignored; invalid or runtime-incompatible requirements are
+rejected rather than silently weakened. Request objects, nonempty default ACR
+values, sector-identifier validation, pairwise subjects, JWT client authentication,
+and token encryption are not supported by dynamic registration.
+
+Use `GET` on the returned configuration URI with the registration access token.
+This read includes the current client secret when present: protect the registration
+token as carefully as that secret. Configuration tokens do not expire automatically;
+admins can replace or revoke them from client detail. Replacement does not change
+the client secret or revoke user grants. Deleting a client invalidates its
+configuration token and protocol grants. Initial-token revocation only stops
+future registrations; it does not invalidate clients already created.
+
+Client registration and configuration tokens cannot authorize user/admin APIs,
+UserInfo, or token issuance. Browser sessions and ordinary OAuth access tokens
+cannot authorize registration/configuration endpoints. Responses are `no-store`;
+secrets are never included in admin inventory responses. CORS uses the existing
+`oidc.allowedOrigins` allowlist without cookie credentials. Per-process limits are
+240 registration/configuration requests per source and 120 per credential per
+minute; apply additional edge limits for multi-instance deployments. Storage
+transactions enforce initial-token quotas across processes sharing local data.
+
+Disabling `oidc.registrationEnabled` stops new registrations and removes the
+endpoint from discovery; existing configuration reads and login flows continue.
+Disabling OIDC disables all protocol routes. A lost POST response may already
+have consumed an invitation; inspect the client inventory and rotate/recover
+credentials instead of blindly retrying registration.
+
+Implemented: the OIDC registration and configuration-read profile described in
+[DYNAMIC_CLIENT_REGISTRATION_PLAN.md](DYNAMIC_CLIENT_REGISTRATION_PLAN.md).
+RFC 7592 self-service update/delete remains an optional later phase; those methods
+return 405. Admins continue updating and deleting clients through `/api/admin/clients`.
+This is not a claim of full OpenID conformance certification.
+
+
+## OAuth token lifecycle and API access
+
+With `oidc.enabled`, the provider also exposes `POST /introspect`, `POST /revoke`,
+`grant_type=client_credentials` at `/token`, and
+`/.well-known/oauth-authorization-server`. All token requests are bounded,
+form-encoded POSTs. Protocol client authentication uses the registered
+`client_secret_basic`, `client_secret_post`, or (where allowed) `none` method;
+browser cookies, management roles, IATs, and RATs do not authorize these calls.
+
+Example server configuration:
+
+```yaml
+oidc:
+  enabled: true
+  refreshMaxTTL: 720h
+  refreshInactivityTTL: 168h
+oauth:
+  refreshTokensEnabled: true
+  passwordGrantEnabled: false
+  resources:
+    - audience: https://api.example.com
+      enabled: true
+      scopes: [read, write]
+```
+
+Resources have exact HTTPS audience identifiers and non-OIDC scope names. They
+are configured by the operator, not created by a token request or dynamic
+registration. Restart after configuration changes. Disabling a resource or
+removing its scopes makes affected tokens inactive during introspection.
+
+Create an **OAuth API access** client without redirects for machine access.
+Register `client_credentials`, then use **OAuth permissions** on client detail to
+allow the grant, select resources, allowed/default scopes, and an optional default
+resource. Without an approved default, each request must include `resource`.
+Only one resource per request is supported. Machine tokens have subject
+`client:<client_id>` and cannot access UserInfo or management APIs. They receive
+neither ID tokens nor refresh tokens.
+
+```sh
+curl --user "$CLIENT_ID:$CLIENT_SECRET" "$ISSUER/token" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode resource=https://api.example.com \
+  --data-urlencode scope=read
+curl --user "$RESOURCE_CLIENT_ID:$RESOURCE_CLIENT_SECRET" "$ISSUER/introspect" \
+  --data-urlencode "token=$ACCESS_TOKEN"
+curl --user "$CLIENT_ID:$CLIENT_SECRET" "$ISSUER/revoke" \
+  --data-urlencode "token=$ACCESS_TOKEN"
+```
+
+The examples use clients registered for `client_secret_basic`. Resource-server
+clients need explicit introspection permission and allowed audiences; ownership
+of a token alone does not grant inspection authority. Authorized callers may
+inspect other clients' access tokens for permitted audiences. Invalid, expired,
+revoked, unknown, or out-of-audience tokens return only `{"active":false}`.
+Resource servers must enforce audience and scopes and consult introspection;
+revocation cannot invalidate an independently cached positive result immediately.
+Refresh inspection additionally requires explicit permission and the issuing
+client's authentication. Token hints are advisory and never grant authority.
+
+Revocation returns HTTP 200 with an empty body for unknown, already revoked, or
+foreign-client tokens. Revoking an access token leaves its refresh family intact.
+Revoking any refresh credential, including a consumed one, revokes its whole
+family and associated access tokens. Eligible public clients send `client_id`
+and their own token. `/introspect` is confidential-client-only.
+
+### Rotating refresh tokens
+
+Refresh is disabled by default. Enable it globally, register both
+`authorization_code` and `refresh_token` on the client, and enable offline access
+in its OAuth permissions. Request `scope=openid offline_access` (plus desired
+profile scopes) and **`prompt=consent`** in the existing PKCE authorization flow.
+The user must approve offline access. Ordinary code exchanges without that scope
+still issue only access and ID tokens.
+
+```sh
+curl "$ISSUER/token" \
+  --data-urlencode grant_type=refresh_token \
+  --data-urlencode "client_id=$PUBLIC_CLIENT_ID" \
+  --data-urlencode "refresh_token=$REFRESH_TOKEN"
+```
+
+Confidential clients must also authenticate. Each successful refresh returns a
+new access token and replacement refresh token, without an ID token or a new
+browser session. Omitted scope retains the current scopes; explicit scope can
+only narrow them, permanently. Resource cannot change. The original sign-in time
+and absolute expiry never advance; rotation extends inactivity only up to the
+absolute deadline.
+
+Serialize refresh calls. Reuse of a consumed credential revokes the whole family,
+including the winning token in a concurrent exchange. There is no grace window;
+after an ambiguous lost response, sign in again instead of retrying the old
+credential. Hashed replay evidence survives restart and is retained through the
+family's maximum lifetime plus its possible access-token lifetime.
+
+Logout ends the browser session but preserves approved offline grants. Account
+security changes, client/policy changes, consent revocation, and explicit family
+revocation invalidate them. Disabling global refresh blocks exchange but does not
+revoke stored families; administrators can revoke them in **Activity → Refresh
+tokens** to prevent reuse after re-enabling. Activity loads page 1 automatically,
+uses 10 rows per page, and displays safe IDs, family, subject, grant, audience,
+absolute/idle expiry, and lifecycle status. Consumed/expired items cannot be
+revoked from the admin UI; the protocol revocation endpoint remains idempotent.
+
+### Legacy password grant
+
+`oauth.passwordGrantEnabled` defaults to false. This optional legacy grant is
+prohibited by current OAuth security best practice (RFC 9700); prefer authorization
+code with PKCE. It requires a confidential client registered for `password`,
+explicit password/grant/resource permissions, and user resource entitlements in
+**User detail → OAuth resource access**. An app admin role confers no OAuth scopes.
+The username is the account email. The grant issues only a resource access token,
+without an ID token, refresh token, session, or consent record. Verification uses
+the existing password hash, generic failures, bounded concurrency, rate limits,
+and an atomic account/policy recheck. MFA is not implemented; this grant must not
+be used to bypass a future required interactive authentication policy.
+
+Administrative settings APIs (admin session and CSRF for writes):
+
+- `GET /api/admin/oauth`: configured resources and global grant flags.
+- `GET/PUT /api/admin/clients/{id}/oauth-policy`: client permissions.
+- `GET/PUT /api/admin/users/{id}/oauth-access`: user resource entitlements.
+
+These permissions are separate from client registration metadata and user
+profile claims. Dynamic clients receive none automatically. Saving permissions
+invalidates existing affected grants. Data migrates to identity schema version 4;
+legacy OIDC access tokens retain their UserInfo behavior and gain no refresh or
+resource authority. Future storage adapters must preserve the serializable
+issuance, rotation, revocation, and rollback contract in `identity.Store`.

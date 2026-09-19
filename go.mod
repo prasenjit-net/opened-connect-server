@@ -1,9 +1,10 @@
 module github.com/prasenjit-net/opened-connect-server
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/gofrs/flock v0.12.1
 	github.com/joho/godotenv v1.5.1

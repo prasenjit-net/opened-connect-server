@@ -1,3 +1,5 @@
+import { ClientOAuthPermissions } from "../components/OAuthPermissions";
+import ClientRegistrationAccess from "../components/ClientRegistrationAccess";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -40,14 +42,23 @@ export default function ClientDetailPage() {
   } catch (error) { setError(error instanceof Error ? error.message : "Unable to complete the action."); }
   finally { setBusy(false); }
  };
- return <div className="flex max-w-[1000px] flex-col gap-4">
+ return <div className="flex w-full min-w-0 flex-col gap-4">
   <Link to="/clients" className="self-start text-sm text-accent hover:underline">← Back to client search</Link>
   {query.isPending ? <p role="status" className="card">Loading client…</p> : query.isError ? <section role="alert" className="card"><p className="mb-3 text-err">{query.error.message}</p><button className="btn btn-secondary" onClick={() => void query.refetch()}>Retry</button></section> : <>
    <section className="card">
-    <h2 className="text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
+    <h2 className="break-words text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
     <p className="mt-2 break-all font-mono text-sm">Client ID: {query.data.client_id}</p>
+    <p className="mt-2 text-sm text-ink-muted">Registration: {query.data.registration_origin === "dynamic" ? "Dynamic" : "Manual"}</p>
+    {query.data.registration_initial_token_id && <p className="mt-2 break-all text-xs text-ink-muted">Initial token ID: {query.data.registration_initial_token_id}</p>}
     <p className="mt-2 text-xs text-ink-faint">Created {new Date(query.data.client_id_issued_at*1000).toLocaleString()} · Updated {new Date(query.data.updated_at*1000).toLocaleString()}</p>
    </section>
+   {!query.data.protocol_compatible && <section role="alert" className="card border border-warn">
+    <h2 className="font-semibold text-warn">Not usable with the OpenID Connect protocol endpoints yet</h2>
+    <p className="my-3 text-sm text-ink-muted">This client's registered settings request capabilities this provider does not implement yet. OpenID Connect sign-in requires these metadata changes. OAuth API grants are controlled separately by OAuth permissions:</p>
+    <ul className="list-inside list-disc text-sm text-ink-muted">
+     {query.data.protocol_incompatibilities?.map((reason) => <li key={reason}>{reason}</li>)}
+    </ul>
+   </section>}
    {secret?.id === clientId && <section className="card border border-accent" aria-label="New client secret">
     <h2 className="font-semibold">Save your client secret</h2>
     <p className="my-3 text-sm text-ink-muted">Copy this secret now. It will not be shown again after you leave this page or dismiss it.</p>
@@ -55,6 +66,8 @@ export default function ClientDetailPage() {
     <button className="btn btn-secondary mt-3" onClick={() => setSecret(null)}>Dismiss secret</button>
    </section>}
    <ClientEditor key={clientId} client={query.data} onSave={save} onCancel={() => { void navigate({ to: "/clients" }); }} />
+   <ClientOAuthPermissions id={clientId} grants={query.data.grant_types ?? []} confidential={["client_secret_basic", "client_secret_post"].includes(query.data.token_endpoint_auth_method ?? "client_secret_basic")} />
+   <ClientRegistrationAccess key={`registration-${clientId}`} clientId={clientId} active={query.data.registration_token_active === true} onChanged={(active) => cache.setQueryData(["client", clientId], { ...query.data, registration_token_active: active })} />
    <section className="card">
     <h2 className="mb-3 font-semibold">Client credentials and deletion</h2>
     <p className="mb-3 text-sm text-ink-muted">{query.data.has_client_secret ? "A client secret is configured and does not expire. Rotation immediately replaces it." : "This client does not use a shared secret."}</p>

@@ -6,6 +6,10 @@ import { IconMenu } from "../icons";
 import ThemeToggle from "./ThemeToggle";
 
 const TITLES: Record<string, string> = {
+ "/activity/transactions": "Transactions",
+ "/activity/codes": "Authorization codes",
+ "/activity/tokens": "Access tokens",
+ "/activity/consents": "Consents",
   "/": "Dashboard",
   "/dashboard": "Dashboard",
   "/components": "Components",
@@ -15,6 +19,7 @@ const TITLES: Record<string, string> = {
   "/clients": "Clients",
   "/clients/": "Clients",
   "/clients/new": "Add client",
+  "/activity/initial-access-tokens": "Initial access tokens",
 };
 
 export default function Topbar({ onMenu }: { onMenu: () => void }) {

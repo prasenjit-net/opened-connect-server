@@ -19,18 +19,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prasenjit-net/opened-connect-server/internal/config"
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
 )
 
 type principalKey struct{}
 type authHandler struct {
 	service *identity.Service
+	oidc    *oidc.Service
 	cfg     config.Config
 	logger  *slog.Logger
 	limiter *loginLimiter
 	slots   chan struct{}
 }
 
-const cookieName = "ocs_session"
+const cookieName = identity.SessionCookieName
 
 func (h *authHandler) cookie(w http.ResponseWriter, token string, expires time.Time) {
 	age := int(time.Until(expires).Seconds())
@@ -202,6 +204,9 @@ func (h *authHandler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.failure(w, err)
 		return
+	}
+	if user.Email != current(r).User.Email {
+		h.cookie(w, "", time.Time{})
 	}
 	respondJSON(w, 200, user)
 }

@@ -19,8 +19,19 @@ var signingAlgorithms = strings.Fields("RS256 RS384 RS512 PS256 PS384 PS512 ES25
 var encryptionAlgorithms = strings.Fields("RSA-OAEP RSA-OAEP-256 A128KW A192KW A256KW dir ECDH-ES ECDH-ES+A128KW ECDH-ES+A192KW ECDH-ES+A256KW A128GCMKW A192GCMKW A256GCMKW PBES2-HS256+A128KW PBES2-HS384+A192KW PBES2-HS512+A256KW")
 var encryptionMethods = strings.Fields("A128CBC-HS256 A192CBC-HS384 A256CBC-HS512 A128GCM A192GCM A256GCM")
 
+// ClientMetadataError retains the offending field for protocol error mapping
+// while remaining compatible with the management API's ValidationError handling.
+type ClientMetadataError struct{ Field, Message string }
+
+func (e *ClientMetadataError) Error() string { return e.Message }
+func (e *ClientMetadataError) Unwrap() error { return ValidationError(e.Message) }
+
 func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
-	fail := func(message string) (ClientMetadata, error) { return nil, ValidationError(message) }
+	fail := func(message string) (ClientMetadata, error) { return nil, &ClientMetadataError{Message: message} }
+	failField := func(field, message string) (ClientMetadata, error) {
+		return nil, &ClientMetadataError{Field: field, Message: message}
+	}
+	failRedirect := func(message string) (ClientMetadata, error) { return failField("redirect_uris", message) }
 	if input == nil {
 		return fail("Client metadata must be a JSON object.")
 	}
@@ -35,13 +46,13 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 			return fail("Invalid localized metadata field: " + key)
 		}
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return fail(key + " cannot be null.")
+			return failField(key, key+" cannot be null.")
 		}
 		switch {
 		case slices.Contains(clientStringFields, base):
 			var value string
 			if err := json.Unmarshal(raw, &value); err != nil || len(value) > 2048 {
-				return fail(key + " must be a string within 2048 characters.")
+				return failField(key, key+" must be a string within 2048 characters.")
 			}
 			if value == "" {
 				delete(m, key)
@@ -49,24 +60,24 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 		case slices.Contains(clientArrayFields, key):
 			var values []string
 			if err := json.Unmarshal(raw, &values); err != nil || len(values) > 100 {
-				return fail(key + " must be an array of at most 100 strings.")
+				return failField(key, key+" must be an array of at most 100 strings.")
 			}
 			seen := map[string]bool{}
 			for _, v := range values {
 				if strings.TrimSpace(v) == "" || len(v) > 2048 || seen[v] {
-					return fail(key + " contains an empty, duplicate, or oversized value.")
+					return failField(key, key+" contains an empty, duplicate, or oversized value.")
 				}
 				seen[v] = true
 			}
 		case key == "require_auth_time":
 			var value bool
 			if json.Unmarshal(raw, &value) != nil {
-				return fail(key + " must be a boolean.")
+				return failField(key, key+" must be a boolean.")
 			}
 		case key == "default_max_age":
 			var value int64
 			if json.Unmarshal(raw, &value) != nil || value < 0 || value > 9007199254740991 {
-				return fail(key + " must be a non-negative safe integer.")
+				return failField(key, key+" must be a non-negative safe integer.")
 			}
 		case key == "jwks":
 			if err := validateClientJWKS(raw); err != nil {
@@ -76,7 +87,13 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 			return fail("Unsupported or read-only client metadata field: " + key)
 		}
 	}
+	var suppliedGrants []string
+	_ = json.Unmarshal(input["grant_types"], &suppliedGrants)
+	oauthOnly := len(suppliedGrants) > 0 && !slices.Contains(suppliedGrants, "authorization_code") && !slices.Contains(suppliedGrants, "implicit")
 	defaults := map[string]any{"application_type": "web", "response_types": []string{"code"}, "grant_types": []string{"authorization_code"}, "token_endpoint_auth_method": "client_secret_basic", "id_token_signed_response_alg": "RS256", "require_auth_time": false}
+	if oauthOnly {
+		defaults["response_types"] = []string{}
+	}
 	for k, v := range defaults {
 		if _, ok := m[k]; !ok {
 			m.set(k, v)
@@ -97,12 +114,12 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 		return fail("At least one grant type is required.")
 	}
 	for _, g := range grants {
-		if !slices.Contains(strings.Fields("authorization_code implicit refresh_token"), g) {
+		if !slices.Contains(strings.Fields("authorization_code implicit refresh_token client_credentials password"), g) {
 			return fail("Unsupported OpenID Connect grant type.")
 		}
 	}
 	responses := m.list("response_types")
-	if len(responses) == 0 {
+	if len(responses) == 0 && !oauthOnly {
 		return fail("At least one response type is required.")
 	}
 	for _, r := range responses {
@@ -123,39 +140,39 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 		}
 	}
 	redirects := m.list("redirect_uris")
-	if len(redirects) == 0 {
-		return fail("At least one redirect URI is required.")
+	if len(redirects) == 0 && !oauthOnly {
+		return failRedirect("At least one redirect URI is required.")
 	}
 	hosts := map[string]bool{}
 	for _, raw := range redirects {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme == "" || strings.ContainsAny(raw, "#*\\") || u.User != nil {
-			return fail("Redirect URIs must be absolute, without fragments, wildcards, or credentials.")
+			return failRedirect("Redirect URIs must be absolute, without fragments, wildcards, or credentials.")
 		}
 		loopback := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"
 		if m.text("application_type") == "native" {
 			if u.Scheme == "https" || (u.Scheme == "http" && !loopback) || slices.Contains([]string{"javascript", "data", "file"}, u.Scheme) {
-				return fail("Native redirects require a custom scheme or HTTP loopback URL.")
+				return failRedirect("Native redirects require a custom scheme or HTTP loopback URL.")
 			}
 		} else {
 			if (u.Scheme != "https" && !(u.Scheme == "http" && loopback)) || u.Host == "" {
-				return fail("Web redirects require HTTPS (HTTP loopback is allowed for code flow).")
+				return failRedirect("Web redirects require HTTPS (HTTP loopback is allowed for code flow).")
 			}
 			if slices.Contains(grants, "implicit") && (u.Scheme != "https" || loopback) {
-				return fail("Implicit web redirects require HTTPS and a non-loopback host.")
+				return failRedirect("Implicit web redirects require HTTPS and a non-loopback host.")
 			}
 		}
 		hosts[u.Hostname()] = true
 	}
 	if m.text("subject_type") == "pairwise" && len(hosts) > 1 && m.text("sector_identifier_uri") == "" {
-		return fail("Pairwise clients with multiple redirect hosts require a sector identifier URI.")
+		return failField("sector_identifier_uri", "Pairwise clients with multiple redirect hosts require a sector identifier URI.")
 	}
 	for key := range m {
 		base, _, _ := strings.Cut(key, "#")
 		if slices.Contains([]string{"logo_uri", "client_uri", "policy_uri", "tos_uri", "jwks_uri", "sector_identifier_uri", "initiate_login_uri"}, base) {
 			httpsOnly := slices.Contains([]string{"jwks_uri", "sector_identifier_uri", "initiate_login_uri"}, base)
 			if !validClientURL(m.text(key), httpsOnly, false) {
-				return fail(key + " must be a valid " + map[bool]string{true: "HTTPS", false: "HTTP(S)"}[httpsOnly] + " URL.")
+				return failField(key, key+" must be a valid "+map[bool]string{true: "HTTPS", false: "HTTP(S)"}[httpsOnly]+" URL.")
 			}
 		}
 	}

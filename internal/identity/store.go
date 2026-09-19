@@ -18,6 +18,11 @@ var (
 	ErrInitialized  = errors.New("identity storage is already initialized")
 )
 
+// SessionCookieName is the browser session cookie's name, shared by the
+// management API (internal/api) and the OpenID Connect protocol endpoints
+// (internal/oidc) so both recognize the same signed-in browser session.
+const SessionCookieName = "ocs_session"
+
 type Role string
 
 const (
@@ -50,19 +55,57 @@ type Session struct {
 	UserID    string    `json:"userId"`
 	CSRF      string    `json:"csrf"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// AuthTime is when the credential check that created this session
+	// succeeded. It is the authentication-timestamp evidence OpenID Connect's
+	// auth_time claim and max_age freshness checks require. Sessions from
+	// before this field existed decode with a zero value, which is always
+	// treated as stale by freshness checks, forcing reauthentication.
+	AuthTime time.Time `json:"authTime,omitempty"`
 }
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	OAuthPolicy(id string) OAuthPolicy
+	OAuthAccess(id string) OAuthAccess
+	RefreshFamily(id string) (RefreshFamily, error)
+	RefreshToken(hash string) (RefreshToken, error)
+	ListRefreshFamilies() []RefreshFamily
+	ListRefreshTokens() []RefreshToken
+	InitialTokens() []InitialAccessToken
+	InitialToken(hash string) (InitialAccessToken, error)
+	RegistrationToken(clientID string) (RegistrationAccessToken, error)
+	ListAuthzTransactions() []AuthzTransaction
+	ListAuthorizationCodes() []AuthorizationCode
+	ListAccessTokens() []AccessToken
+	ListConsents() []Consent
 	Client(id string) (ClientRecord, error)
 	Clients() []ClientRecord
 	User(id string) (User, error)
 	UserByEmail(email string) (User, error)
 	Users() []User
 	Session(hash string) (Session, error)
+	AuthzTransaction(id string) (AuthzTransaction, error)
+	AuthorizationCode(hash string) (AuthorizationCode, error)
+	AccessToken(hash string) (AccessToken, error)
+	Consent(userID, clientID string) (Consent, error)
 }
 
+// Security mutations must invalidate protocol grants atomically: SaveClient and
+// DeleteClient invalidate the client's codes, transactions, consent and tokens.
+// SaveUser on password/email/role/active changes, DeleteUser and
+// DeleteUserSessions invalidate the user's same protocol state as well as sessions.
+// SaveClient must advance UpdatedAt monotonically, even with an unchanged clock.
+// DeleteClient must also delete its registration access token. Registration-token
+// replacement is independent of SaveClient and must not invalidate user grants.
 type Tx interface {
+	SaveOAuthPolicy(id string, policy OAuthPolicy)
+	SaveOAuthAccess(id string, access OAuthAccess)
+	SaveRefreshFamily(RefreshFamily)
+	SaveRefreshToken(RefreshToken)
+	RevokeRefreshFamily(id string)
+	SaveInitialToken(InitialAccessToken)
+	SaveRegistrationToken(RegistrationAccessToken)
+	DeleteRegistrationToken(clientID string)
 	SaveClient(ClientRecord)
 	DeleteClient(id string)
 	ReadTx
@@ -72,9 +115,27 @@ type Tx interface {
 	DeleteSession(hash string)
 	DeleteUserSessions(userID string)
 	PruneSessions(now time.Time)
+	SaveAuthzTransaction(AuthzTransaction)
+	DeleteAuthzTransaction(id string)
+	SaveAuthorizationCode(AuthorizationCode)
+	SaveAccessToken(AccessToken)
+	RevokeAccessToken(hash string)
+	RevokeAccessTokensForUser(userID string)
+	RevokeAccessTokensForClient(clientID string)
+	RevokeAccessTokensForCode(codeHash string)
+	SaveConsent(Consent)
+	PruneOIDCState(now time.Time)
 }
 
-// Store callbacks execute atomically. Write must roll back all changes when the
+// Refresh families and consumed credential hashes must be retained through their
+// replay-retention deadline. RevokeRefreshFamily atomically revokes every linked
+// access token. Security mutations above also revoke affected refresh families.
+// SaveOAuthPolicy invalidates client grants; SaveOAuthAccess invalidates user
+// tokens/families. A revoked consent invalidates its refresh families. Ordinary
+// DeleteSession and registration-token changes leave offline grants unchanged.
+//
+// Store callbacks execute atomically and serializably, including concurrent
+// refresh exchanges and security mutations. Write must roll back all changes when the
 // callback returns an error. Callbacks must not call back into Store.
 type Store interface {
 	Read(context.Context, func(ReadTx) error) error

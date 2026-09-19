@@ -13,10 +13,11 @@ import (
 )
 
 type Service struct {
-	store     Store
-	ttl       time.Duration
-	dummyHash string
-	now       func() time.Time
+	oauthResources []Resource
+	store          Store
+	ttl            time.Duration
+	dummyHash      string
+	now            func() time.Time
 }
 type Principal struct {
 	User    Profile
@@ -166,7 +167,8 @@ func (s *Service) Login(ctx context.Context, email, password, oldHash string) (L
 	if err != nil {
 		return LoginResult{}, err
 	}
-	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: s.now().UTC().Add(s.ttl)}}}
+	now := s.now().UTC()
+	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: now.Add(s.ttl), AuthTime: now}}}
 	err = s.store.Write(ctx, func(tx Tx) error {
 		current, err := tx.User(found.ID)
 		if err != nil || !current.Active || current.PasswordHash != found.PasswordHash || current.Email != found.Email {
@@ -436,4 +438,12 @@ func (s *Service) ChangePassword(ctx context.Context, hash, current, password st
 		tx.DeleteUserSessions(u.ID)
 		return nil
 	})
+}
+
+// ConfigureOAuthResources sets the trusted registry before serving requests.
+func (s *Service) ConfigureOAuthResources(resources []Resource) {
+	s.oauthResources = make([]Resource, len(resources))
+	for i, r := range resources {
+		s.oauthResources[i] = Resource{Audience: r.Audience, Enabled: r.Enabled, Scopes: append([]string{}, r.Scopes...)}
+	}
 }

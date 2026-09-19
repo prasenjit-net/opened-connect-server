@@ -48,7 +48,7 @@ func newAuthRig(t *testing.T) authRig {
 	}
 	cfg := config.Default()
 	cfg.Storage.DataDir = dir
-	return authRig{NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), service), service, dir}
+	return authRig{NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), service, nil), service, dir}
 }
 func (rig authRig) request(t *testing.T, method, path string, body any, session browserSession) *httptest.ResponseRecorder {
 	t.Helper()
@@ -233,7 +233,7 @@ func TestSecureCookieAndSessionRotation(t *testing.T) {
 	rig := newAuthRig(t)
 	cfg := config.Default()
 	cfg.Auth.CookieSecure = true
-	rig.handler = NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), rig.service)
+	rig.handler = NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), rig.service, nil)
 	first := rig.login(t, "admin@example.com", testPassword)
 	if !first.cookie.Secure {
 		t.Fatal("HTTPS cookie must be Secure")
@@ -261,7 +261,7 @@ func TestDevelopmentOriginAndProductionRejection(t *testing.T) {
 	cfg.App.Env = "production"
 	cfg.App.URL = "https://identity.example.com"
 	cfg.Auth.CookieSecure = true
-	rig.handler = NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), rig.service)
+	rig.handler = NewRouter(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), rig.service, nil)
 	res = httptest.NewRecorder()
 	rig.handler.ServeHTTP(res, request())
 	expectStatus(t, res, 403)
@@ -327,6 +327,8 @@ func TestExtendedProfilesAndEntitlements(t *testing.T) {
 	res = rig.request(t, "PUT", "/user/profile", input, alice)
 	expectStatus(t, res, 200)
 	saved := profileFrom(t, res)
+	expectStatus(t, rig.request(t, "GET", "/user/profile", nil, alice), 401)
+	alice = rig.login(t, saved.Email, testPassword)
 	if saved.ID != aliceProfile.ID || saved.Sub != saved.ID || saved.Role != identity.RoleUser || saved.EmailVerified || saved.PhoneNumberVerified || saved.FamilyName != "Example" || saved.Address.Locality != "Example" || saved.ClaimUpdatedAt == 0 {
 		t.Fatalf("bad profile: %+v", saved)
 	}

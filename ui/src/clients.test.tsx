@@ -13,7 +13,7 @@ import { router } from "./router";
 vi.mock("./context/ConfigContext", () => ({ useConfig: () => ({ ui: { appName: "Test App", defaultTheme: "auto" }, version: "1", startedAtMs: 0 }) }));
 vi.mock("./context/ThemeContext", () => ({ useTheme: () => ({ mode: "light", setMode: vi.fn() }) }));
 const admin: User = { id: "admin", name: "Admin", email: "admin@example.com", role: "admin", active: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-const client: OIDCClient = { client_id: "portal-id", client_name: "Portal", client_id_issued_at: 1234567890, updated_at: 1234567890, has_client_secret: true, client_secret_expires_at: 0, redirect_uris: ["https://app.example.com/cb"], application_type: "web", token_endpoint_auth_method: "client_secret_basic", response_types: ["code"], grant_types: ["authorization_code"] };
+const client: OIDCClient = { client_id: "portal-id", client_name: "Portal", client_id_issued_at: 1234567890, updated_at: 1234567890, has_client_secret: true, client_secret_expires_at: 0, redirect_uris: ["https://app.example.com/cb"], application_type: "web", token_endpoint_auth_method: "client_secret_basic", response_types: ["code"], grant_types: ["authorization_code"], protocol_compatible: true };
 function setup(path: string) {
  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
  const testRouter = createRouter({ routeTree: router.routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
@@ -26,7 +26,7 @@ beforeEach(() => {
  vi.spyOn(api,"client").mockResolvedValue(client);
 });
 describe("client management", () => {
- it.each(["/clients","/clients/new","/clients/portal-id"])("blocks regular users at %s and hides Clients navigation", async (path) => {
+ it.each(["/clients","/clients/new","/clients/portal-id","/clients/registration","/activity/initial-access-tokens"])("blocks regular users at %s and hides Clients navigation", async (path) => {
   vi.mocked(api.session).mockResolvedValue({ user: { ...admin,role:"user" }, csrfToken:"csrf", expiresAt:new Date(Date.now()+3600000).toISOString() });
   setup(path);
   expect(await screen.findByRole("heading",{ name:"Access denied" })).toBeInTheDocument();
@@ -58,12 +58,18 @@ describe("client management", () => {
   expect(screen.getByRole("button",{ name:"Next" })).toBeDisabled();
   expect(api.clients).toHaveBeenCalledTimes(2);
  });
+ it("shows a warning banner for a client that requests unsupported protocol capabilities", async () => {
+  vi.mocked(api.client).mockResolvedValue({ ...client, protocol_compatible: false, protocol_incompatibilities: ["pairwise subject identifiers are not yet implemented; this client requires public subjects"] });
+  setup("/clients/portal-id");
+  expect(await screen.findByRole("heading", { name: "Not usable with the OpenID Connect protocol endpoints yet" })).toBeInTheDocument();
+  expect(screen.getByText(/pairwise subject identifiers/)).toBeInTheDocument();
+ });
  it("creates into detail, exposes the secret once without caching it, and browser Back returns to search", async () => {
   const create = vi.spyOn(api,"createClient").mockResolvedValue({ ...client,client_secret:"one-time-secret" });
   const { cache,testRouter } = setup("/clients");
   await userEvent.click(await screen.findByRole("link",{ name:"Add client" }));
   await userEvent.type(await screen.findByLabelText("Client name"),"Portal");
-  await userEvent.type(screen.getByLabelText("Redirect URIs",{ exact:false }),"https://app.example.com/cb");
+  await userEvent.type(screen.getByRole("textbox",{ name:"Redirect URIs" }),"https://app.example.com/cb");
   await userEvent.click(screen.getByRole("button",{ name:"Create client" }));
   expect(await screen.findByText("one-time-secret")).toBeInTheDocument();
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ client_name:"Portal",redirect_uris:["https://app.example.com/cb"] }));

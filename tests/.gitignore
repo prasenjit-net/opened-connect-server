@@ -1,0 +1,7 @@
+node_modules/
+.env
+.auth/
+.server-workspace/
+playwright-report*/
+test-results/
+*.log

@@ -46,7 +46,7 @@ describe("theme routes", () => {
     renderRoute("/certificates/unknown");
     expect(await screen.findByRole("heading", { name: "Page not found" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: "Back to dashboard" }));
-    expect(await screen.findByText(/Your workspace is ready/)).toBeInTheDocument();
+    expect(await screen.findByText(/Manage your profile and account security/)).toBeInTheDocument();
   });
 
   it("renders the component showcase and local notifications", async () => {
@@ -57,7 +57,7 @@ describe("theme routes", () => {
 
   it("supports the previous dashboard URL", async () => {
     const testRouter = renderRoute("/dashboard");
-    expect(await screen.findByText(/Your workspace is ready/)).toBeInTheDocument();
+    expect(await screen.findByText(/Manage your profile and account security/)).toBeInTheDocument();
     expect(testRouter.state.location.pathname).toBe("/");
   });
 });

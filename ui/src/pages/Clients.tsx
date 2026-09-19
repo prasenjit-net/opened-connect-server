@@ -1,14 +1,18 @@
+import { useState } from "react";
+import IssueInitialTokenDialog from "../components/IssueInitialTokenDialog";
 import { Link } from "@tanstack/react-router";
 import { useClientSearch } from "../context/ClientSearchContext";
 
 export default function ClientsPage() {
+ const [issuing, setIssuing] = useState(false);
  const { draft, setDraft, result, pending, error, searched, search, goToPage } = useClientSearch();
  const pages = Math.max(1,Math.ceil((result?.total ?? 0)/10));
  return <div className="flex flex-col gap-4">
   <div className="flex flex-wrap items-center justify-between gap-3">
    <p className="text-sm text-ink-muted">Search OpenID Connect clients by name or client ID.</p>
-   <Link to="/clients/new" className="btn btn-primary">Add client</Link>
+   <div className="flex flex-wrap gap-2"><button className="btn btn-secondary" onClick={() => setIssuing(true)}>Issue initial access token</button><Link to="/clients/new" className="btn btn-primary">Add client</Link></div>
   </div>
+  {issuing && <IssueInitialTokenDialog onClose={() => setIssuing(false)} />}
   <section className="card">
    <form className="mb-4 flex items-end gap-3" onSubmit={(e) => { e.preventDefault(); search(); }}>
     <label className="flex flex-1 flex-col gap-1.5 text-sm font-medium">Search clients<input className="input" type="search" maxLength={254} value={draft.q} onChange={(e) => setDraft({ q: e.target.value })} placeholder="Name or client ID" /></label>
@@ -20,13 +24,13 @@ export default function ClientsPage() {
    {result && <>
     <div className="overflow-x-auto rounded-lg border border-line" aria-busy={pending}>
      <table className="w-full min-w-[640px] text-left text-sm">
-      <thead className="bg-surface-2 font-mono text-xs text-ink-faint"><tr>{["Name","Client ID","Application","Authentication"].map((label) => <th key={label} className="px-4 py-3 font-medium">{label}</th>)}</tr></thead>
+      <thead className="bg-surface-2 font-mono text-xs text-ink-faint"><tr>{["Name","Client ID","Application","Authentication","Registration"].map((label) => <th key={label} className="px-4 py-3 font-medium">{label}</th>)}</tr></thead>
       <tbody>{result.clients.map((client) => <tr key={client.client_id} className="border-t border-line hover:bg-surface-2">
        <td className="px-4 py-3"><Link to="/clients/$clientId" params={{ clientId: client.client_id }} className="text-accent hover:underline">{client.client_name || "Unnamed client"}</Link></td>
        <td className="break-all px-4 py-3 font-mono text-xs"><Link to="/clients/$clientId" params={{ clientId: client.client_id }} className="hover:text-accent">{client.client_id}</Link></td>
-       <td className="px-4 py-3">{client.application_type}</td><td className="px-4 py-3">{client.token_endpoint_auth_method}</td>
+       <td className="px-4 py-3">{client.application_type}</td><td className="px-4 py-3">{client.token_endpoint_auth_method}</td><td className="px-4 py-3">{client.registration_origin === "dynamic" ? "Dynamic" : "Manual"}</td>
       </tr>)}
-      {result.clients.length === 0 && <tr><td colSpan={4} className="py-10 text-center text-ink-muted">No clients match your search.</td></tr>}
+      {result.clients.length === 0 && <tr><td colSpan={5} className="py-10 text-center text-ink-muted">No clients match your search.</td></tr>}
       </tbody>
      </table>
     </div>
