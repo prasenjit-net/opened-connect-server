@@ -37,7 +37,7 @@ func TestDiscoveryDocumentReflectsCapabilities(t *testing.T) {
 	if doc["authorization_endpoint"] != "https://issuer.example.com/authorize" {
 		t.Fatalf("unexpected authorization_endpoint: %v", doc["authorization_endpoint"])
 	}
-	for _, absent := range []string{"registration_endpoint", "end_session_endpoint"} {
+	for _, absent := range []string{"registration_endpoint"} {
 		if _, ok := doc[absent]; ok {
 			t.Fatalf("expected %s to be omitted, not just false", absent)
 		}

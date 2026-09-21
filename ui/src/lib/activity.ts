@@ -9,5 +9,5 @@ export interface ActivityRecord {
 }
 export interface ActivityList { records: ActivityRecord[]; total: number; page: number; pageSize: number; }
 export interface ActivityCounts { total: number; active: number; revoked: number; expired: number; completed: number; consumed: number; }
-export interface ActivityOverview { generatedAt: string; protocolEnabled: boolean; users: number; clients: number; counts: Record<ActivityKind, ActivityCounts>; recent: ActivityRecord[]; }
+export interface ActivityOverview { sessions?: Record<string, number>; generatedAt: string; protocolEnabled: boolean; users: number; clients: number; counts: Record<ActivityKind, ActivityCounts>; recent: ActivityRecord[]; }
 export function activityDate(value?: string | null) { return value ? new Date(value).toLocaleString() : "—"; }

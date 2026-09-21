@@ -230,7 +230,7 @@ func TestRegistrationRollbackAndMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"version": 4`) {
+	if !strings.Contains(string(data), `"version": 5`) {
 		t.Fatal("store not migrated")
 	}
 }

@@ -103,11 +103,40 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil || !user.Active {
 			return errInvalidGrant
 		}
+		sid := ""
+		if record.OPSessionID != "" {
+			if !identity.SessionActive(tx, record.OPSessionID, now) {
+				return errInvalidGrant
+			}
+			for _, a := range tx.ListAppSessions() {
+				if a.OPSessionID == record.OPSessionID && a.ClientID == client.ID && a.EndedAt.IsZero() {
+					sid = a.ID
+					a.LastSeenAt = now
+					tx.SaveAppSession(a)
+					break
+				}
+			}
+			if sid == "" {
+				if e := tx.CheckSessionCapacity("app"); e != nil {
+					return e
+				}
+				sid, err = randomToken()
+				if err != nil {
+					return err
+				}
+				tx.SaveAppSession(identity.AppSession{ID: sid, OPSessionID: record.OPSessionID, ClientID: client.ID, UserID: user.ID, Subject: user.Sub, CreatedAt: now, LastSeenAt: now})
+			}
+			record.AppSessionID = sid
+			if op, e := identity.SessionByID(tx, record.OPSessionID); e == nil {
+				op.LastSeenAt = now
+				tx.SaveSession(op)
+			}
+		}
 		accessToken, err = randomToken()
 		if err != nil {
 			return err
 		}
-		idToken, err = s.signIDToken(client, user.Sub, record.Nonce, time.Unix(record.AuthTime, 0).UTC(), now)
+		idToken, err = s.signIDToken(client, user.Sub, record.Nonce, time.Unix(record.AuthTime, 0).UTC(), now, sid)
 		if err != nil {
 			return err
 		}
@@ -123,7 +152,7 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 			record.RetainUntil = family.RetainUntil
 		}
 		tx.SaveAuthorizationCode(record)
-		tx.SaveAccessToken(identity.AccessToken{GrantType: "authorization_code", SubjectKind: "user", FamilyID: familyID, IDTokenExpiresAt: now.Add(s.Config.IDTokenTTL), Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
+		tx.SaveAccessToken(identity.AccessToken{OPSessionID: record.OPSessionID, AppSessionID: sid, GrantType: "authorization_code", SubjectKind: "user", FamilyID: familyID, IDTokenExpiresAt: now.Add(s.Config.IDTokenTTL), Hash: hashToken(accessToken), ClientID: client.ID, UserID: user.ID, Audience: "userinfo", Scopes: scopes, CodeHash: codeHash, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
 		tx.PruneOIDCState(now)
 		return nil
 	})

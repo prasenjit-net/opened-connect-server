@@ -295,6 +295,9 @@ func (k *KeyStore) Sign(claims ...interface{}) (string, error) {
 	return k.signAt(time.Now(), claims...)
 }
 func (k *KeyStore) signAt(now time.Time, claims ...interface{}) (string, error) {
+	return k.signTypedAt(now, "JWT", claims...)
+}
+func (k *KeyStore) signTypedAt(now time.Time, typ jose.ContentType, claims ...interface{}) (string, error) {
 	k.mu.RLock()
 	active := k.active
 	k.mu.RUnlock()
@@ -330,7 +333,7 @@ func (k *KeyStore) signAt(now time.Time, claims ...interface{}) (string, error) 
 			}
 		}
 	}
-	opts := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", active.record.KID)
+	opts := (&jose.SignerOptions{}).WithType(typ).WithHeader("kid", active.record.KID)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: active.private}, opts)
 	if err != nil {
 		return "", fmt.Errorf("create signer: %w", err)

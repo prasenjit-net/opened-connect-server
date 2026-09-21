@@ -237,6 +237,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		txn.ReauthenticateAfter = now
 	}
 	if !needsLogin {
+		txn.OPSessionID = principal.Session.ID
 		txn.UserID = principal.User.ID
 		txn.AuthTime = principal.Session.AuthTime.Unix()
 	}

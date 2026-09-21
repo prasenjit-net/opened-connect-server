@@ -1,3 +1,4 @@
+import { sessionKinds, sessionLabels } from "../lib/sessions";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
@@ -20,6 +21,7 @@ function AdminOverview() {
   {data && <>
    <div className="flex flex-wrap items-center gap-3 text-sm"><Badge tone={data.protocolEnabled ? "ok" : "warn"}>OpenID Connect {data.protocolEnabled ? "enabled" : "disabled"}</Badge><Link to="/users" className="text-accent hover:underline">{data.users} users</Link><Link to="/clients" className="text-accent hover:underline">{data.clients} clients</Link><span className="ml-auto text-xs text-ink-faint">Updated {activityDate(data.generatedAt)}</span></div>
    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{activityKinds.map(kind => <Link key={kind} to={`/activity/${kind}`} className="card transition-colors hover:bg-surface-2"><h3 className="text-sm font-medium text-ink-muted">{activityLabels[kind]}</h3><p className="my-3 text-3xl font-semibold">{(data.counts[kind]?.active ?? 0)}<span className="ml-2 text-sm font-normal text-ink-muted">active</span></p><p className="text-xs text-ink-faint">{(data.counts[kind]?.total ?? 0)} retained · {(data.counts[kind]?.revoked ?? 0)} revoked · {(data.counts[kind]?.expired ?? 0)} expired</p></Link>)}</div>
+   <div className="grid gap-4 sm:grid-cols-3">{sessionKinds.map(kind => <Link key={kind} to={`/activity/${kind}`} className="card"><h3>{sessionLabels[kind]}</h3><p className="text-2xl">{data.sessions?.[kind] ?? 0}</p><span className="text-sm text-ink-muted">{kind === "logout-events" ? "retained events" : "active provider records"}</span></Link>)}</div>
    <section className="card"><div className="card-head"><h2>Recent retained activity</h2></div><p className="mb-4 text-sm text-ink-muted">The 10 newest records across transactions, codes, tokens, refresh tokens, and consents. Expired records may be removed during cleanup.</p><ActivityTable records={data.recent} /></section>
   </>}
  </div>;

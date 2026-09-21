@@ -249,7 +249,7 @@ Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve 
 
 Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
 
-The provider implements OpenID Connect authorization code with required PKCE S256, discovery, opaque access tokens, RS256 ID tokens, and scope-gated UserInfo. OpenID Connect sign-in requires compatible client metadata; unsupported signing, encryption, pairwise subjects, and implicit/hybrid response types are flagged in client detail. Dynamic client registration and OAuth token lifecycle endpoints are described below. RP-initiated logout, request objects, and WebFinger are not implemented. OAuth grants are controlled separately by explicit administrative permissions.
+The provider implements OpenID Connect authorization code with required PKCE S256, discovery, opaque access tokens, RS256 ID tokens, and scope-gated UserInfo. OpenID Connect sign-in requires compatible client metadata; unsupported signing, encryption, pairwise subjects, and implicit/hybrid response types are flagged in client detail. Dynamic client registration and OAuth token lifecycle endpoints are described below. RP-initiated, front-channel, and back-channel logout are implemented. Request objects and WebFinger are not implemented. OAuth grants are controlled separately by explicit administrative permissions.
 
 ### Authorization-code security and browser clients
 
@@ -484,3 +484,126 @@ invalidates existing affected grants. Data migrates to identity schema version 4
 legacy OIDC access tokens retain their UserInfo behavior and gain no refresh or
 resource authority. Future storage adapters must preserve the serializable
 issuance, rotation, revocation, and rollback contract in `identity.Store`.
+
+
+## Logout and session activity
+
+The provider supports RP-initiated logout at `GET` or form-encoded `POST /logout`,
+plus front-channel browser notifications and signed back-channel notifications.
+Discovery advertises `end_session_endpoint` and the four logout/session-support
+flags. The first-party Sign out action opens the same confirmation flow.
+
+Register these optional fields in the client's **Logout** settings (also accepted
+by dynamic registration):
+
+- `backchannel_logout_uri` and `backchannel_logout_session_required`.
+- `frontchannel_logout_uri` and `frontchannel_logout_session_required`.
+- `post_logout_redirect_uris`: exact allowed return URLs.
+
+Logout URLs use HTTPS in production. The front-channel URI must share its origin
+with a registered authorization redirect URI. This implementation supports HTTP(S)
+logout return URLs; custom native-app return schemes are not accepted. Local HTTP
+is available in the explicit development/test environment.
+
+An RP starts shared logout by navigating to the discovered endpoint with its
+`id_token_hint`, optional `client_id`, registered `post_logout_redirect_uri`, and
+optional `state`. The provider verifies the hint and asks for confirmation. A
+recent expired ID token remains usable as a hint when its session association is
+known. Hints do not authorize remote or account-wide termination. Cancelling keeps
+the provider session. After confirmation, the completion page attempts browser
+notifications and offers a Continue link to the validated return URL with `state`.
+An initial server delivery is attempted when the sender is available, with a bounded wait; retries run independently.
+
+Each successful new code exchange records a provider-session/client association
+and puts its random `sid` in the ID token. Apps must remember that association
+alongside their own local session. Repeated login in the same live association
+reuses `sid`; a new association after termination receives a new one. Apps receive
+a form-encoded POST containing `logout_token`, an RS256 JWT with `typ=logout+jwt`,
+issuer, audience, timestamps, unique `jti`, session identifier, and the standard
+back-channel logout event. Validate these claims and the signature against the
+provider's JWKS, protect against replay, and invalidate matching local sessions
+idempotently. Return HTTP 200 even if the matching session already ended. An
+existing browser cookie then fails on the app's next protected request.
+
+Front-channel endpoints are loaded in iframes with `iss` and `sid`; they must permit
+framing by the provider and clear the matching app state. Third-party storage or
+framing restrictions may prevent this. An iframe load is never treated as an
+acknowledgment. Administrator, security, expiry, and remote-device actions use
+back-channel notification; browser-only destinations remain unconfirmed when the
+affected browser is unavailable. Logging out locally inside an external app alone
+does not notify this provider or other apps.
+
+### Session pages and scope
+
+**Your sessions** (`/sessions`) is available to every signed-in account. View
+provider sessions, known app associations, and logout events. End a selected
+session or app association, sign out other/all sessions, or revoke an app's access.
+Bulk sign-out and offline-access revocation require password confirmation.
+Ending one app association preserves provider SSO, so a subsequent authorization
+request may sign the app in again.
+
+Administrators have **Provider sessions**, **Known app sessions**, and **Logout
+events** under Activity, plus links from user/client details. They can end another
+user's selected/all sessions and retry failed back-channel notifications within
+the retry window. The tables show provider lifecycle separately from delivery
+status, including pending, acknowledged, failed, unconfirmed, and unsupported.
+Details include the last 50 delivery attempts. Last seen means provider-observed
+activity; app-only logout and app traffic are not observable here.
+
+Ordinary logout invalidates session-bound online tokens and pending authorization
+requests/codes. Explicitly consented offline grants survive unless separately
+revoked. Password/account security changes, disabled/deleted users, client security
+changes, and consent revocation invalidate their affected offline grants as well.
+Machine grants have no browser session. Existing signed ID tokens cannot be recalled.
+
+### Operations and storage
+
+Session-management mutations return an operation ID and the committed local
+outcome, plus a browser completion URL when applicable. Administrators can inspect
+`GET /api/admin/logout-operations/{id}` and retry a delivery with
+`POST /api/admin/logout-deliveries/{id}/retry`. The original
+`POST /api/auth/logout` retains its 204 response and now queues notifications.
+All management mutations retain browser-session authorization and CSRF checks.
+
+Schema version 5 adds session associations and a transactional logout outbox to
+`identity.json`. Upgrades preserve existing credentials and grants; historical app
+sessions cannot be reconstructed, so older unlinked grants keep their existing
+lifecycle until expiry or explicit revocation. New authorization flows acquire
+complete session linkage. Keep a backup before upgrading; older binaries cannot
+read the new schema.
+
+The worker starts with `serve`, expires provider sessions without browser traffic,
+and leases one outbound request per process. HTTP requests time out after five
+seconds; transient failures and 429 responses retry with exponential backoff and
+jitter for up to 24 hours. Redirects are not followed. Restarts recover leases;
+local logout stays effective when an RP is unavailable. HTTP acknowledgment proves
+receipt, not that an open browser UI refreshed.
+
+Ended sessions, app associations and deliveries are retained for 30 days.
+Creation is bounded at 10,000 retained provider sessions, 50,000 app associations,
+and 10,000 pending browser interactions. Saturation rejects new creation rather
+than dropping delivery intents or preventing termination. Operation summaries
+retain at most 10,000 entries. These initial limits and retention periods are fixed.
+Idle workers avoid rewriting unchanged storage. Deployments needing higher volume
+should use a transactional database adapter with equivalent guarantees.
+
+Outbound logout blocks private, loopback, link-local and unspecified destinations
+by default, pins validated DNS results at connection time, and bypasses environment
+HTTP proxies. Development allows loopback RPs. For trusted internal production RPs,
+configure the narrowest necessary networks:
+
+```yaml
+oidc:
+  logoutAllowedCIDRs: ["10.20.30.0/24"]
+```
+
+Changing a registered back-channel destination does not retarget old pending
+notifications; they become failed with `destination_changed`. Activity responses
+exclude credentials, credential hashes, raw tokens and destination URLs.
+
+The manual `tests/e2e/logout-sessions.spec.ts` scenario uses two actual local RPs
+with independent JWT verification and two browser contexts. It proves local versus
+shared logout by checking protected app requests and a still-active second device.
+See [the implementation plan](LOGOUT_IMPLEMENTATION_PLAN.md) for the original
+scope and [test instructions](tests/README.md) for running it against a disposable
+instance. OpenID certification is not claimed.

@@ -132,6 +132,7 @@ func (s *Service) completeInteraction(r *http.Request, principal identity.Princi
 			return errClientPolicyChanged
 		}
 		txn.UserID, txn.AuthTime = user.ID, session.AuthTime.Unix()
+		txn.OPSessionID = session.ID
 		consent, consentErr := tx.Consent(user.ID, client.ID)
 		covered := consentErr == nil && consentCovers(consent, client, txn.Scopes)
 		if consentErr != nil && !errors.Is(consentErr, identity.ErrNotFound) {
@@ -158,7 +159,7 @@ func (s *Service) completeInteraction(r *http.Request, principal identity.Princi
 				}
 				tx.SaveConsent(identity.Consent{UserID: user.ID, ClientID: client.ID, Scopes: granted, PolicyRevision: client.UpdatedAt, GrantedAt: now})
 			}
-			redirect, err = s.mintCodeTx(tx, finishParams{client: client, redirectURI: txn.RedirectURI, scopes: granted, state: txn.State, nonce: txn.Nonce, codeChallenge: txn.CodeChallenge, codeChallengeMethod: txn.CodeChallengeMethod, userID: user.ID, authTime: session.AuthTime, transactionID: txn.ID})
+			redirect, err = s.mintCodeTx(tx, finishParams{client: client, redirectURI: txn.RedirectURI, scopes: granted, state: txn.State, nonce: txn.Nonce, codeChallenge: txn.CodeChallenge, codeChallengeMethod: txn.CodeChallengeMethod, userID: user.ID, authTime: session.AuthTime, transactionID: txn.ID, sessionHash: session.Hash})
 			if err != nil {
 				return err
 			}
@@ -247,9 +248,17 @@ func (s *Service) mintCodeTx(tx identity.Tx, p finishParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	opID := ""
+	if p.sessionHash != "" {
+		session, e := tx.Session(p.sessionHash)
+		if e != nil || !identity.SessionActive(tx, session.ID, s.Now()) {
+			return "", identity.ErrUnauthorized
+		}
+		opID = session.ID
+	}
 	tx.PruneOIDCState(s.Now())
 	tx.SaveAuthorizationCode(identity.AuthorizationCode{
-		CreatedAt: s.Now(), Hash: hashToken(code), TransactionID: p.transactionID, ClientID: p.client.ID, UserID: p.userID,
+		OPSessionID: opID, CreatedAt: s.Now(), Hash: hashToken(code), TransactionID: p.transactionID, ClientID: p.client.ID, UserID: p.userID,
 		RedirectURI: p.redirectURI, Scopes: p.scopes, Nonce: p.nonce, AuthTime: p.authTime.Unix(),
 		CodeChallenge: p.codeChallenge, CodeChallengeMethod: p.codeChallengeMethod,
 		ClientUpdatedAt: client.UpdatedAt, ExpiresAt: s.Now().Add(s.Config.CodeTTL),

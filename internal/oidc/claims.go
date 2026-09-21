@@ -67,7 +67,7 @@ func ProjectUserInfo(profile identity.Profile, scopes []string) map[string]any {
 // subject, issuance/expiry, and auth_time/nonce when applicable. Standard
 // profile disclosure stays in UserInfo for this delivery (plan section 8);
 // additional ID-token claims are a later, per-client-policy capability.
-func (s *Service) signIDToken(client identity.ProtocolClient, sub, nonce string, authTime, issuedAt time.Time) (string, error) {
+func (s *Service) signIDToken(client identity.ProtocolClient, sub, nonce string, authTime, issuedAt time.Time, sid ...string) (string, error) {
 	claims := jwt.Claims{
 		Issuer:   s.Config.Issuer,
 		Subject:  sub,
@@ -76,6 +76,9 @@ func (s *Service) signIDToken(client identity.ProtocolClient, sub, nonce string,
 		IssuedAt: jwt.NewNumericDate(issuedAt),
 	}
 	extra := map[string]any{"auth_time": authTime.Unix()}
+	if len(sid) > 0 && sid[0] != "" {
+		extra["sid"] = sid[0]
+	}
 	if nonce != "" {
 		extra["nonce"] = nonce
 	}

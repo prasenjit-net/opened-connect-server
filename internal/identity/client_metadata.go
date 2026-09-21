@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-var clientStringFields = strings.Fields("client_name application_type logo_uri client_uri policy_uri tos_uri jwks_uri sector_identifier_uri subject_type id_token_signed_response_alg id_token_encrypted_response_alg id_token_encrypted_response_enc userinfo_signed_response_alg userinfo_encrypted_response_alg userinfo_encrypted_response_enc request_object_signing_alg request_object_encryption_alg request_object_encryption_enc token_endpoint_auth_method token_endpoint_auth_signing_alg initiate_login_uri")
-var clientArrayFields = strings.Fields("redirect_uris response_types grant_types contacts default_acr_values request_uris")
+var clientStringFields = strings.Fields("client_name application_type logo_uri client_uri policy_uri tos_uri jwks_uri sector_identifier_uri subject_type id_token_signed_response_alg id_token_encrypted_response_alg id_token_encrypted_response_enc userinfo_signed_response_alg userinfo_encrypted_response_alg userinfo_encrypted_response_enc request_object_signing_alg request_object_encryption_alg request_object_encryption_enc token_endpoint_auth_method token_endpoint_auth_signing_alg initiate_login_uri frontchannel_logout_uri backchannel_logout_uri")
+var clientArrayFields = strings.Fields("redirect_uris response_types grant_types contacts default_acr_values request_uris post_logout_redirect_uris")
 var displayMetadata = strings.Fields("client_name logo_uri client_uri policy_uri tos_uri")
 var languageTag = regexp.MustCompile(`^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$`)
 var signingAlgorithms = strings.Fields("RS256 RS384 RS512 PS256 PS384 PS512 ES256 ES384 ES512 EdDSA HS256 HS384 HS512 none")
@@ -69,7 +69,7 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 				}
 				seen[v] = true
 			}
-		case key == "require_auth_time":
+		case key == "require_auth_time" || key == "frontchannel_logout_session_required" || key == "backchannel_logout_session_required":
 			var value bool
 			if json.Unmarshal(raw, &value) != nil {
 				return failField(key, key+" must be a boolean.")
@@ -223,6 +223,38 @@ func normalizeClientMetadata(input ClientMetadata) (ClientMetadata, error) {
 			}
 		}
 	}
+	for _, channel := range []string{"frontchannel", "backchannel"} {
+		raw := m.text(channel + "_logout_uri")
+		if raw == "" {
+			var required bool
+			_ = json.Unmarshal(m[channel+"_logout_session_required"], &required)
+			if required {
+				return fail(channel + " logout URI is required.")
+			}
+			continue
+		}
+		if !validClientURL(raw, false, false) {
+			return fail("Invalid " + channel + " logout URI.")
+		}
+		if channel == "frontchannel" {
+			u, _ := url.Parse(raw)
+			matched := false
+			for _, redirect := range m.list("redirect_uris") {
+				r, _ := url.Parse(redirect)
+				if r.Scheme == u.Scheme && r.Host == u.Host {
+					matched = true
+				}
+			}
+			if !matched {
+				return fail("Front-channel logout must share an origin with a redirect URI.")
+			}
+		}
+	}
+	for _, raw := range m.list("post_logout_redirect_uris") {
+		if !validClientURL(raw, false, false) {
+			return fail("Post-logout redirect URIs must be absolute HTTP(S) URLs without fragments.")
+		}
+	}
 	return m, nil
 }
 func validClientURL(raw string, httpsOnly, fragment bool) bool {
@@ -268,6 +300,15 @@ func validateClientJWKS(raw json.RawMessage) error {
 			if e != nil || len(b) == 0 {
 				return fail()
 			}
+		}
+	}
+	return nil
+}
+
+func validateLogoutTransport(m ClientMetadata, allowHTTP bool) error {
+	for _, raw := range append(append(m.list("post_logout_redirect_uris"), m.text("frontchannel_logout_uri")), m.text("backchannel_logout_uri")) {
+		if raw != "" && !allowHTTP && !strings.HasPrefix(raw, "https://") {
+			return ValidationError("Logout URLs must use HTTPS outside development.")
 		}
 	}
 	return nil

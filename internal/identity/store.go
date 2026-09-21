@@ -51,10 +51,16 @@ type User struct {
 }
 
 type Session struct {
-	Hash      string    `json:"hash"`
-	UserID    string    `json:"userId"`
-	CSRF      string    `json:"csrf"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	ID         string    `json:"id"`
+	CreatedAt  time.Time `json:"createdAt"`
+	LastSeenAt time.Time `json:"lastSeenAt"`
+	Device     string    `json:"device,omitempty"`
+	EndedAt    time.Time `json:"endedAt,omitempty"`
+	EndReason  string    `json:"endReason,omitempty"`
+	Hash       string    `json:"hash"`
+	UserID     string    `json:"userId"`
+	CSRF       string    `json:"csrf"`
+	ExpiresAt  time.Time `json:"expiresAt"`
 	// AuthTime is when the credential check that created this session
 	// succeeded. It is the authentication-timestamp evidence OpenID Connect's
 	// auth_time claim and max_age freshness checks require. Sessions from
@@ -65,6 +71,14 @@ type Session struct {
 
 // ReadTx values are snapshots; callers cannot mutate stored records through them.
 type ReadTx interface {
+	LogoutMaintenanceDue(time.Time) bool
+	CheckSessionCapacity(kind string) error
+	LogoutOperation(string) (LogoutOperation, error)
+	ListSessions() []Session
+	ListAppSessions() []AppSession
+	AppSession(string) (AppSession, error)
+	ListLogoutDeliveries() []LogoutDelivery
+	LogoutInteraction(string) (LogoutInteraction, error)
 	OAuthPolicy(id string) OAuthPolicy
 	OAuthAccess(id string) OAuthAccess
 	RefreshFamily(id string) (RefreshFamily, error)
@@ -98,6 +112,14 @@ type ReadTx interface {
 // DeleteClient must also delete its registration access token. Registration-token
 // replacement is independent of SaveClient and must not invalidate user grants.
 type Tx interface {
+	SaveAppSession(AppSession)
+	SaveLogoutOperation(LogoutOperation)
+	SaveLogoutDelivery(LogoutDelivery)
+	SaveLogoutInteraction(LogoutInteraction)
+	EndSession(id, actor, reason string, now time.Time)
+	EndAppSession(id, actor, reason string, now time.Time)
+	PruneLogoutState(time.Time)
+	RemoveSessionCredential(string)
 	SaveOAuthPolicy(id string, policy OAuthPolicy)
 	SaveOAuthAccess(id string, access OAuthAccess)
 	SaveRefreshFamily(RefreshFamily)

@@ -245,6 +245,11 @@ func dynamicMetadata(input ClientMetadata, allowHTTP bool) (ClientMetadata, erro
 	if len(m.list("request_uris")) > 0 || len(m.list("default_acr_values")) > 0 {
 		return fail("invalid_client_metadata", "Request objects and default ACR values are not supported.")
 	}
+	for _, raw := range append(append(m.list("post_logout_redirect_uris"), m.text("frontchannel_logout_uri")), m.text("backchannel_logout_uri")) {
+		if raw != "" && !allowHTTP && !strings.HasPrefix(raw, "https://") {
+			return nil, &RegistrationError{"invalid_client_metadata", "Logout URLs must use HTTPS."}
+		}
+	}
 	for _, raw := range m.list("redirect_uris") {
 		u, _ := url.Parse(raw)
 		if m.text("application_type") == "web" && u.Scheme != "https" && !allowHTTP {

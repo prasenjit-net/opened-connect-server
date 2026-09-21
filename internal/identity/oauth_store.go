@@ -1,5 +1,7 @@
 package identity
 
+import "time"
+
 func (s *fileState) OAuthPolicy(id string) OAuthPolicy { return clonePolicy(s.OAuthPolicies[id]) }
 func (s *fileState) SaveOAuthPolicy(id string, p OAuthPolicy) {
 	if s.OAuthPolicies == nil {
@@ -14,6 +16,11 @@ func (s *fileState) SaveOAuthAccess(id string, a OAuthAccess) {
 		s.UserOAuthAccess = map[string]OAuthAccess{}
 	}
 	s.UserOAuthAccess[id] = cloneAccess(a)
+	for _, v := range s.AppSessions {
+		if v.UserID == id {
+			s.EndAppSession(v.ID, "security", "access_policy_changed", time.Now().UTC())
+		}
+	}
 	s.RevokeAccessTokensForUser(id)
 }
 func (s *fileState) RefreshFamily(id string) (RefreshFamily, error) {

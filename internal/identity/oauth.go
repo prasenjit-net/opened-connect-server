@@ -219,6 +219,8 @@ func (s *Service) VerifyOAuthPassword(ctx context.Context, email, password strin
 }
 
 type RefreshFamily struct {
+	AppSessionID   string    `json:"appSessionId,omitempty"`
+	OPSessionID    string    `json:"opSessionId,omitempty"`
 	ID             string    `json:"id"`
 	ClientID       string    `json:"clientId"`
 	UserID         string    `json:"userId"`

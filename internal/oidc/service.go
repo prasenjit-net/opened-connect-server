@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prasenjit-net/opened-connect-server/internal/identity"
@@ -11,6 +12,7 @@ import (
 // runtime. It mirrors config.OIDCConfig but lives here so this package
 // doesn't depend on internal/config for its core logic.
 type Config struct {
+	LogoutAllowedCIDRs    []string
 	PasswordGrantEnabled  bool
 	RefreshTokensEnabled  bool
 	Resources             []identity.Resource
@@ -34,11 +36,12 @@ type Config struct {
 // record transactions, sharing identity.Store's atomicity boundary), the
 // signing key store, and resolved configuration.
 type Service struct {
-	Identity *identity.Service
-	Store    identity.Store
-	Keys     *KeyStore
-	Config   Config
-	Now      func() time.Time
+	logoutDeliveryMu sync.Mutex
+	Identity         *identity.Service
+	Store            identity.Store
+	Keys             *KeyStore
+	Config           Config
+	Now              func() time.Time
 
 	clientAuthLimiter *clientAuthLimiter
 	trafficLimiter    *clientAuthLimiter

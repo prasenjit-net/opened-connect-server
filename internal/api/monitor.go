@@ -9,6 +9,11 @@ import (
 )
 
 func (h *authHandler) activity(w http.ResponseWriter, r *http.Request) {
+	switch chi.URLParam(r, "kind") {
+	case "op-sessions", "app-sessions", "logout-events":
+		h.sessionActivity(w, r)
+		return
+	}
 	page := 1
 	if raw := r.URL.Query().Get("page"); raw != "" {
 		var err error

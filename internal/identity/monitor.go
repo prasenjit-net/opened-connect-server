@@ -52,6 +52,7 @@ type ActivityCounts struct {
 	Consumed  int `json:"consumed"`
 }
 type ActivityOverview struct {
+	Sessions    map[string]int            `json:"sessions"`
 	GeneratedAt time.Time                 `json:"generatedAt"`
 	Users       int                       `json:"users"`
 	Clients     int                       `json:"clients"`
@@ -243,6 +244,17 @@ func (s *Service) ActivityOverview(ctx context.Context, hash string) (ActivityOv
 	err := s.store.Read(ctx, func(tx ReadTx) error {
 		if _, err := s.principal(tx, hash, true); err != nil {
 			return err
+		}
+		result.Sessions = map[string]int{"op-sessions": 0, "app-sessions": 0, "logout-events": len(tx.ListLogoutDeliveries())}
+		for _, v := range tx.ListSessions() {
+			if v.EndedAt.IsZero() && s.now().Before(v.ExpiresAt) {
+				result.Sessions["op-sessions"]++
+			}
+		}
+		for _, v := range tx.ListAppSessions() {
+			if v.EndedAt.IsZero() && SessionActive(tx, v.OPSessionID, s.now()) {
+				result.Sessions["app-sessions"]++
+			}
 		}
 		result.GeneratedAt = s.now()
 		result.Users = len(tx.Users())
