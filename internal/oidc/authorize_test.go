@@ -174,6 +174,27 @@ func TestAuthorizePromptNoneWithConsentMintsCode(t *testing.T) {
 	}
 }
 
+func TestAuthorizeFormPostDeliversCodeAndState(t *testing.T) {
+	f := newTestFixture(t, "https://rp.example.com/cb?from=registered")
+	policyRevision := mustClientUpdatedAt(t, f)
+	if err := f.store.Write(t.Context(), func(tx identity.Tx) error {
+		tx.SaveConsent(identity.Consent{UserID: f.adminID, ClientID: f.clientID, Scopes: []string{"openid", "profile"}, PolicyRevision: policyRevision})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	params := baseAuthorizeParams(f.clientID, f.redirectURI)
+	params.Set("prompt", "none")
+	params.Set("response_mode", "form_post")
+	rec := doAuthorize(f, params, f.adminToken)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" || !strings.Contains(rec.Body.String(), `method="post"`) || !strings.Contains(rec.Body.String(), `action="https://rp.example.com/cb?from=registered"`) {
+		t.Fatalf("expected uncached form post, got code=%d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `name="code"`) || !strings.Contains(rec.Body.String(), `name="state" value="xyz"`) {
+		t.Fatalf("form did not contain authorization response: %s", rec.Body.String())
+	}
+}
+
 func TestAuthorizeRejectsMissingPKCE(t *testing.T) {
 	f := newTestFixture(t, "https://rp.example.com/cb")
 	params := baseAuthorizeParams(f.clientID, "https://rp.example.com/cb")

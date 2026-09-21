@@ -1,6 +1,6 @@
 # Multiple response types and form-post implementation plan
 
-Status: proposed; this document does not implement protocol changes.
+Status: in progress. Code flow supports `query` and `form_post`; token-bearing response types remain planned.
 
 ## Objective
 
