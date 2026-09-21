@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -813,9 +814,22 @@ func (a *App) handleInspector(w http.ResponseWriter, r *http.Request) {
 
 // handleInspectorEvents returns the event log as JSON for the auto-refresh
 // script on the inspector page (simple polling, no need for websockets in a
-// test tool like this).
+// test tool like this). With ?since=<id> it returns only events newer than
+// that id (oldest first) so the page can append in place instead of
+// rebuilding the whole list - which is what was collapsing open <details>
+// elements on every poll. With no ?since it returns the full recent log,
+// newest first, for the initial page load.
 func (a *App) handleInspectorEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		since, err := strconv.ParseInt(sinceStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid since", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(a.store.eventsSince(since))
+		return
+	}
 	_ = json.NewEncoder(w).Encode(a.store.recentEvents())
 }
 

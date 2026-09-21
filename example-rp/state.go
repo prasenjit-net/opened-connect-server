@@ -253,6 +253,22 @@ func (s *Store) recentEvents() []Event {
 	return out
 }
 
+// eventsSince returns events with ID greater than the given id, oldest
+// first, for incremental polling - the inspector page appends these to its
+// existing list instead of rebuilding it, which is what keeps expanded
+// <details> open across polls.
+func (s *Store) eventsSince(id int64) []Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Event
+	for _, e := range s.events {
+		if e.ID > id {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (s *Store) clearEvents() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
