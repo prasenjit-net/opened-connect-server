@@ -77,6 +77,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go appServer.RunBackground(ctx)
 
 	select {
 	case err := <-errCh:

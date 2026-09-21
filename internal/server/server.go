@@ -53,6 +53,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 		return nil, err
 	}
 	auth.ConfigureOAuthResources(cfg.OAuth.Resources)
+	auth.ConfigureLogoutURLs(cfg.App.Env == "development" || cfg.App.Env == "test")
 	app := &App{cfg: cfg, logger: logger, build: build, options: options, identity: auth}
 	if cfg.OIDC.Enabled {
 		keys, err := oidc.NewFileKeyStore(filepath.Join(cfg.Storage.DataDir, "signing-keys"))
@@ -66,6 +67,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 			return nil, fmt.Errorf("load signing keys: %w", err)
 		}
 		app.oidc = oidc.New(auth, store, keys, oidc.Config{
+			LogoutAllowedCIDRs:    cfg.OIDC.LogoutAllowedCIDRs,
 			PasswordGrantEnabled:  cfg.OAuth.PasswordGrantEnabled,
 			RefreshTokensEnabled:  cfg.OAuth.RefreshTokensEnabled,
 			Resources:             cfg.OAuth.Resources,
@@ -109,7 +111,7 @@ func (a *App) Handler() http.Handler {
 	// paths. They deliberately sit outside /api's JSON/CSRF middleware.
 	// Reserve protocol paths even for wrong methods, disabled OIDC, or trailing
 	// segments so an OAuth request can never fall through to SPA HTML.
-	for endpoint, methods := range map[string]string{"/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/introspect": "POST", "/revoke": "POST, OPTIONS", "/.well-known/oauth-authorization-server": "GET", "/register/{clientID}": "GET, OPTIONS"} {
+	for endpoint, methods := range map[string]string{"/logout": "GET, POST", "/logout/interaction/{id}": "GET, POST", "/.well-known/openid-configuration": "GET", "/jwks": "GET", "/authorize": "GET, POST", "/token": "POST, OPTIONS", "/userinfo": "GET, POST, OPTIONS", "/register": "POST, OPTIONS", "/introspect": "POST", "/revoke": "POST, OPTIONS", "/.well-known/oauth-authorization-server": "GET", "/register/{clientID}": "GET, OPTIONS"} {
 		r.Handle(endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
@@ -132,6 +134,11 @@ func (a *App) Handler() http.Handler {
 	if a.oidc != nil {
 		r.Get("/.well-known/openid-configuration", a.oidc.DiscoveryHandler)
 		r.Get("/jwks", a.oidc.JWKSHandler)
+		r.Get("/logout/style.css", a.oidc.LogoutStyleHandler)
+		r.Get("/logout", a.oidc.LogoutHandler)
+		r.Post("/logout", a.oidc.LogoutHandler)
+		r.Get("/logout/interaction/{id}", a.oidc.LogoutInteractionHandler)
+		r.Post("/logout/interaction/{id}", a.oidc.LogoutInteractionHandler)
 		r.Get("/.well-known/oauth-authorization-server", a.oidc.OAuthMetadataHandler)
 		r.Post("/introspect", a.oidc.IntrospectHandler)
 		r.Post("/revoke", a.oidc.WithCORS(a.oidc.RevokeHandler))
@@ -269,4 +276,24 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RunBackground binds durable logout delivery to the hosting process lifetime.
+func (a *App) RunBackground(ctx context.Context) {
+	if a.oidc != nil {
+		a.oidc.RunLogoutWorker(ctx, func(err error) { a.logger.Error("logout worker failed", "error", err) })
+	} else {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			if err := a.identity.SweepSessions(ctx); err != nil && ctx.Err() == nil {
+				a.logger.Error("session cleanup failed", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}
 }

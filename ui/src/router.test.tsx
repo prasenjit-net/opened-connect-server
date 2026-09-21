@@ -39,7 +39,7 @@ describe("theme routes", () => {
     renderRoute("/settings");
     expect(await screen.findByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["Dashboard", "Components", "My profile", "Settings"]);
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["Dashboard", "Components", "Your sessions", "My profile", "Settings"]);
   });
 
   it("shows 404 for removed domain routes and supports returning home", async () => {

@@ -1,3 +1,4 @@
+import type { SessionKind, SessionList, LogoutResult } from "./sessions";
 import type { OAuthSettings, OAuthPolicy, OAuthAccess } from "./oauth";
 import type { InitialToken, InitialTokenList, RegistrationSettings } from "./registration";
 import type { ActivityKind, ActivityList, ActivityOverview } from "./activity";
@@ -92,6 +93,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+ endUserSessions: (id: string, password: string, revokeOffline: boolean) => request<LogoutResult>(`/api/admin/users/${encodeURIComponent(id)}/sessions/logout`, {method:"POST", body:JSON.stringify({scope:"all", password, revokeOffline})}),
+ sessionActivity: (kind: SessionKind, admin: boolean, params: {q: string; status: string; page: number}, signal?: AbortSignal) => request<SessionList>(`/api/${admin ? "admin/activity" : "user/session-activity"}/${kind}?${new URLSearchParams({...params, page: String(params.page)})}`, {signal}),
+ endSession: (kind: SessionKind, id: string, admin: boolean, input: {scope?: string; password?: string; revokeOffline?: boolean} = {}) => request<LogoutResult>(admin ? `/api/admin/session-activity/${kind}/${encodeURIComponent(id)}/logout` : `/api/user/${kind === "app-sessions" ? "app-sessions" : "sessions"}${id ? "/" + encodeURIComponent(id) : ""}/logout`, {method: "POST", body: JSON.stringify(input)}),
+ revokeAppAccess: (id: string, password: string) => request<LogoutResult>(`/api/user/clients/${encodeURIComponent(id)}/revoke-access`, {method: "POST", body: JSON.stringify({password, revokeOffline: true})}),
+ prepareLogout: () => request<{continueTo: string}>("/api/auth/logout/prepare", {method: "POST", body: "{}"}),
  oauthSettings: () => request<OAuthSettings>("/api/admin/oauth"),
  oauthPolicy: (id: string) => request<OAuthPolicy>(`/api/admin/clients/${encodeURIComponent(id)}/oauth-policy`),
  saveOAuthPolicy: (id: string, policy: OAuthPolicy) => request<OAuthPolicy>(`/api/admin/clients/${encodeURIComponent(id)}/oauth-policy`, { method: "PUT", body: JSON.stringify(policy) }),

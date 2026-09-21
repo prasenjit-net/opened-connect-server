@@ -45,7 +45,8 @@ export default function ClientDetailPage() {
  return <div className="flex w-full min-w-0 flex-col gap-4">
   <Link to="/clients" className="self-start text-sm text-accent hover:underline">← Back to client search</Link>
   {query.isPending ? <p role="status" className="card">Loading client…</p> : query.isError ? <section role="alert" className="card"><p className="mb-3 text-err">{query.error.message}</p><button className="btn btn-secondary" onClick={() => void query.refetch()}>Retry</button></section> : <>
-   <section className="card">
+   <a className="btn btn-secondary self-start" href={`/activity/app-sessions?q=${encodeURIComponent(clientId)}`}>View sessions</a>
+<section className="card">
     <h2 className="break-words text-lg font-semibold">{query.data.client_name || "Unnamed client"}</h2>
     <p className="mt-2 break-all font-mono text-sm">Client ID: {query.data.client_id}</p>
     <p className="mt-2 text-sm text-ink-muted">Registration: {query.data.registration_origin === "dynamic" ? "Dynamic" : "Manual"}</p>

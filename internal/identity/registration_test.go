@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -171,6 +172,45 @@ func TestRegistrationValidationAndRevocation(t *testing.T) {
 	}
 }
 
+func TestDynamicRegistrationAllowsUnapprovedConfidentialMachineClient(t *testing.T) {
+	s, store, _ := fixture(t)
+	ctx := context.Background()
+	login, err := s.Login(ctx, "admin@example.com", password, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, iat, err := s.IssueInitialToken(ctx, login.Session.Hash, InitialTokenInput{Label: "Machine registration", MaxUses: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.RegisterClient(ctx, iat, metadata(t, `{"grant_types":["client_credentials"],"token_endpoint_auth_method":"client_secret_post"}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created["client_id"].(string)
+	if created["client_secret"] == nil {
+		t.Fatal("confidential machine client did not receive a secret")
+	}
+	runtime, err := s.ProtocolClient(ctx, id)
+	if err != nil || !slices.Contains(runtime.GrantTypes, "client_credentials") || len(runtime.RedirectURIs) != 0 || len(runtime.ResponseTypes) != 0 {
+		t.Fatalf("unexpected machine client projection: %+v, %v", runtime, err)
+	}
+	if err = store.Read(ctx, func(tx ReadTx) error {
+		p := tx.OAuthPolicy(id)
+		if len(p.Grants) != 0 || len(p.Resources) != 0 || p.DefaultResource != "" {
+			t.Fatalf("dynamic registration granted OAuth access: %+v", p)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.RegisterClient(ctx, iat, metadata(t, `{"grant_types":["client_credentials"],"token_endpoint_auth_method":"none"}`), false)
+	var invalid *RegistrationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("public machine client accepted: %v", err)
+	}
+}
+
 type rollbackRegistrationStore struct{ Store }
 
 func (s rollbackRegistrationStore) Write(ctx context.Context, fn func(Tx) error) error {
@@ -230,7 +270,7 @@ func TestRegistrationRollbackAndMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"version": 4`) {
+	if !strings.Contains(string(data), `"version": 5`) {
 		t.Fatal("store not migrated")
 	}
 }

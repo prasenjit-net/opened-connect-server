@@ -13,11 +13,12 @@ import (
 )
 
 type Service struct {
-	oauthResources []Resource
-	store          Store
-	ttl            time.Duration
-	dummyHash      string
-	now            func() time.Time
+	allowLogoutHTTP bool
+	oauthResources  []Resource
+	store           Store
+	ttl             time.Duration
+	dummyHash       string
+	now             func() time.Time
 }
 type Principal struct {
 	User    Profile
@@ -167,23 +168,42 @@ func (s *Service) Login(ctx context.Context, email, password, oldHash string) (L
 	if err != nil {
 		return LoginResult{}, err
 	}
+	id, err := randomToken()
+	if err != nil {
+		return LoginResult{}, err
+	}
 	now := s.now().UTC()
-	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: now.Add(s.ttl), AuthTime: now}}}
+	result := LoginResult{Token: token, Principal: Principal{User: found.Profile, Session: Session{ID: id, CreatedAt: now, LastSeenAt: now, Hash: SessionHash(token), UserID: found.ID, CSRF: csrf, ExpiresAt: now.Add(s.ttl), AuthTime: now}}}
 	err = s.store.Write(ctx, func(tx Tx) error {
 		current, err := tx.User(found.ID)
 		if err != nil || !current.Active || current.PasswordHash != found.PasswordHash || current.Email != found.Email {
 			return ErrCredentials
 		}
 		result.User = current.Profile
-		tx.PruneSessions(s.now())
-		tx.DeleteSession(oldHash)
+		tx.PruneLogoutState(s.now())
+		if err := tx.CheckSessionCapacity("op"); err != nil {
+			return err
+		}
+		if old, e := tx.Session(oldHash); e == nil && old.UserID == found.ID && old.ExpiresAt.After(now) {
+			result.Session.ID = old.ID
+			result.Session.CreatedAt = old.CreatedAt
+			result.Session.Device = old.Device
+			tx.RemoveSessionCredential(oldHash)
+		} else if e == nil {
+			tx.EndSession(old.ID, found.ID, "account_switch", now)
+		}
 		tx.SaveSession(result.Session)
 		return nil
 	})
 	return result, err
 }
 func (s *Service) Logout(ctx context.Context, hash string) error {
-	return s.store.Write(ctx, func(tx Tx) error { tx.DeleteSession(hash); return nil })
+	return s.store.Write(ctx, func(tx Tx) error {
+		if session, err := tx.Session(hash); err == nil {
+			tx.EndSession(session.ID, session.UserID, "sign_out", s.now())
+		}
+		return nil
+	})
 }
 
 func (s *Service) GetUser(ctx context.Context, hash, id string) (Profile, error) {
@@ -447,3 +467,6 @@ func (s *Service) ConfigureOAuthResources(resources []Resource) {
 		s.oauthResources[i] = Resource{Audience: r.Audience, Enabled: r.Enabled, Scopes: append([]string{}, r.Scopes...)}
 	}
 }
+
+// ConfigureLogoutURLs is called once at server construction.
+func (s *Service) ConfigureLogoutURLs(allowHTTP bool) { s.allowLogoutHTTP = allowHTTP }

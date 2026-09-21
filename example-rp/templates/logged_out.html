@@ -1,0 +1,15 @@
+{{define "content"}}
+<section class="ok-box">
+  <h2 style="margin-top:0">Signed out</h2>
+  <p>The OP redirected back here after RP-initiated logout. Any local session was already cleared - either by the front-channel iframe notification or a back-channel logout_token, both visible in the <a href="/inspector">inspector</a>.</p>
+</section>
+<section>
+  <h2>Query parameters received</h2>
+  {{if .Query}}
+  <table>
+    {{range $k, $v := .Query}}<tr><th scope="row">{{$k}}</th><td><code>{{index $v 0}}</code></td></tr>{{end}}
+  </table>
+  {{else}}<p class="muted">None.</p>{{end}}
+</section>
+<p><a class="btn" href="/">Back home</a></p>
+{{end}}

@@ -23,10 +23,12 @@ test.describe("discovery and JWKS", () => {
     expect(doc.introspection_endpoint_auth_methods_supported).toEqual(["client_secret_basic", "client_secret_post"]);
     expect(doc.code_challenge_methods_supported).toEqual(["S256"]);
     expect(doc.id_token_signing_alg_values_supported).toEqual(["RS256"]);
+    expect(doc.end_session_endpoint).toBe(`${BASE_URL}/logout`);
+    for (const flag of ["frontchannel_logout_supported","frontchannel_logout_session_supported","backchannel_logout_supported","backchannel_logout_session_supported"]) expect(doc[flag]).toBe(true);
 
     // Endpoints this delivery doesn't implement must be omitted, not
     // published as false or as a URL that 404s.
-    for (const absent of ["registration_endpoint", "end_session_endpoint"]) {
+    for (const absent of ["registration_endpoint"]) {
       // Dynamic registration is actually enabled on this e2e server, so if
       // a registration_endpoint IS published, it must be a real, working
       // URL rather than silently absent — see dynamic-client-registration.spec.ts.

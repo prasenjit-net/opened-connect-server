@@ -57,6 +57,7 @@ There's no real third-party relying party to redirect to. Most specs use `https:
 
 | File | Covers |
 | --- | --- |
+| `logout-sessions.spec.ts` | Two real local RPs with independent JWT validation; local versus shared logout, app/provider activity, second-device isolation, desktop/mobile screenshots (requires a development/test provider that permits loopback RPs) |
 | `discovery.spec.ts` | OIDC and OAuth metadata agree with configured grant flags; JWKS contains only public material; protocol methods never fall through to the SPA |
 | `authorization-code-flow.spec.ts` | The golden path: login → consent → redirect → code exchange → **independently signature-verified** ID token → UserInfo |
 | `consent-deny.spec.ts` | Denial still redirects the RP back with `error=access_denied` |

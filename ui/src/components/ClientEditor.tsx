@@ -23,7 +23,7 @@ export default function ClientEditor({ client, onSave, onCancel }: {
                 if (oauthOnly && (key === "response_types" || key === "redirect_uris")) { input[key] = []; continue; }
                 const value = fields[key] ?? "";
                 if (clientListChoices[key] && !value.trim()) throw new Error(`Select at least one ${key === "response_types" ? "response type" : "grant type"}.`);
-                if (value.trim() !== "") input[key as string] = kind === "list" ? [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))] : kind === "number" ? Number(value) : value.trim();
+                if (value.trim() !== "") input[key as string] = kind === "list" ? [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))] : kind === "number" ? Number(value) : kind === "boolean" ? value === "true" : value.trim();
             }
             if (jwks.trim()) {
                 const value: unknown = JSON.parse(jwks);
@@ -61,6 +61,7 @@ export default function ClientEditor({ client, onSave, onCancel }: {
                             const choices = [...new Set([...clientListChoices[key], ...selected])];
                             return <fieldset key={key} className="min-w-0 rounded-lg border border-line p-3"><legend className="px-1 text-sm font-medium">{label}</legend><div className="grid gap-2 sm:grid-cols-2">{choices.map(choice => <label key={choice} className="flex min-w-0 items-start gap-2 text-sm"><input type="checkbox" className="mt-1 shrink-0" checked={selected.includes(choice)} onChange={e => change((e.target.checked ? [...selected, choice] : selected.filter(item => item !== choice)).join("\n"))} /><span className="min-w-0 break-words [overflow-wrap:anywhere]">{choice}{!["code", "authorization_code", "client_credentials", "password", "refresh_token"].includes(choice) && <span className="block text-xs text-ink-faint">Not supported by this provider yet</span>}{["client_credentials", "password", "refresh_token"].includes(choice) && <span className="block text-xs text-ink-faint">Requires explicit OAuth permission</span>}</span></label>)}</div></fieldset>;
                         }
+                        if (kind === "boolean") return <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value === "true"} onChange={e => change(String(e.target.checked))}/>{label}</label>;
                         if (kind === "list") return <ListField key={key} label={label} value={value} onChange={change} required={key === "redirect_uris"} type={key === "contacts" ? "email" : key.endsWith("uris") ? "url" : "text"} placeholder={key === "redirect_uris" ? "https://app.example.com/callback" : key === "contacts" ? "admin@example.com" : undefined} />;
                         const algorithms = key.endsWith("_enc") ? encryptionMethods : key.includes("encryption_alg") || key.includes("encrypted_response_alg") ? encryptionAlgorithms : key.endsWith("_alg") ? signingAlgorithms.filter(alg => key !== "token_endpoint_auth_signing_alg" || alg !== "none") : undefined;
                         const choices = algorithms ? ["", ...algorithms] : options[kind];

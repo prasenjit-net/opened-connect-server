@@ -12,10 +12,14 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const currentVersion = 4
+const currentVersion = 5
 
 type FileStore struct{ path string }
 type fileState struct {
+	LogoutOperations     map[string]LogoutOperation         `json:"logoutOperations,omitempty"`
+	AppSessions          map[string]AppSession              `json:"appSessions,omitempty"`
+	LogoutDeliveries     map[string]LogoutDelivery          `json:"logoutDeliveries,omitempty"`
+	LogoutInteractions   map[string]LogoutInteraction       `json:"logoutInteractions,omitempty"`
 	OAuthPolicies        map[string]OAuthPolicy             `json:"oauthPolicies,omitempty"`
 	UserOAuthAccess      map[string]OAuthAccess             `json:"userOAuthAccess,omitempty"`
 	RefreshFamilies      map[string]RefreshFamily           `json:"refreshFamilies,omitempty"`
@@ -95,7 +99,7 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 			return fmt.Errorf("unsupported or invalid identity store")
 		}
 		switch state.Version {
-		case 1, 2, 3:
+		case 1, 2, 3, 4:
 			// Older stores gain empty protocol and registration maps; existing
 			// identities, client IDs, and encrypted secrets remain unchanged.
 			state.Version = currentVersion
@@ -132,6 +136,13 @@ func (s *FileStore) withState(ctx context.Context, write bool, fn func(*fileStat
 	}
 	if err = s.transformClientSecrets(&state, false); err != nil {
 		return err
+	}
+	for hash, session := range state.Sessions {
+		if session.ID == "" {
+			session.ID = activityID("legacy-session", hash)
+			session.CreatedAt = session.AuthTime
+			state.Sessions[hash] = session
+		}
 	}
 	if err = fn(&state); err != nil {
 		return err
@@ -193,7 +204,7 @@ func (s *fileState) Users() []User {
 }
 func (s *fileState) Session(hash string) (Session, error) {
 	v, ok := s.Sessions[hash]
-	if !ok {
+	if !ok || !v.EndedAt.IsZero() {
 		return Session{}, ErrNotFound
 	}
 	return v, nil
@@ -215,8 +226,13 @@ func (s *fileState) DeleteUser(id string) {
 	delete(s.UserOAuthAccess, id)
 	s.DeleteUserSessions(id)
 }
-func (s *fileState) SaveSession(session Session) { s.Sessions[session.Hash] = session }
-func (s *fileState) DeleteSession(hash string)   { delete(s.Sessions, hash) }
+func (s *fileState) SaveSession(session Session)         { s.Sessions[session.Hash] = session }
+func (s *fileState) RemoveSessionCredential(hash string) { delete(s.Sessions, hash) }
+func (s *fileState) DeleteSession(hash string) {
+	if v, ok := s.Sessions[hash]; ok {
+		s.EndSession(v.ID, v.UserID, "sign_out", time.Now().UTC())
+	}
+}
 func (s *fileState) DeleteUserSessions(id string) {
 	s.RevokeAccessTokensForUser(id)
 	for k, c := range s.AuthorizationCodes {
@@ -234,16 +250,16 @@ func (s *fileState) DeleteUserSessions(id string) {
 			delete(s.Consents, k)
 		}
 	}
-	for k, sess := range s.Sessions {
+	for _, sess := range s.Sessions {
 		if sess.UserID == id {
-			delete(s.Sessions, k)
+			s.EndSession(sess.ID, "security", "account_security_change", time.Now().UTC())
 		}
 	}
 }
 func (s *fileState) PruneSessions(now time.Time) {
-	for k, sess := range s.Sessions {
-		if !sess.ExpiresAt.After(now) {
-			delete(s.Sessions, k)
+	for _, sess := range s.Sessions {
+		if !sess.ExpiresAt.After(now) && sess.EndedAt.IsZero() {
+			s.EndSession(sess.ID, "system", "expired", now)
 		}
 	}
 }
@@ -281,6 +297,11 @@ func (s *fileState) DeleteClient(id string) {
 	delete(s.ClientsMap, id)
 }
 func (s *fileState) invalidateClientGrants(id string) {
+	for _, a := range s.AppSessions {
+		if a.ClientID == id {
+			s.EndAppSession(a.ID, "security", "client_changed", time.Now().UTC())
+		}
+	}
 	s.RevokeAccessTokensForClient(id)
 	for k, c := range s.AuthorizationCodes {
 		if c.ClientID == id {
@@ -396,6 +417,11 @@ func (s *fileState) Consent(userID, clientID string) (Consent, error) {
 }
 func (s *fileState) SaveConsent(c Consent) {
 	if c.Revoked {
+		for _, a := range s.AppSessions {
+			if a.UserID == c.UserID && a.ClientID == c.ClientID {
+				s.EndAppSession(a.ID, c.UserID, "access_revoked", time.Now().UTC())
+			}
+		}
 		for id, f := range s.RefreshFamilies {
 			if f.UserID == c.UserID && f.ClientID == c.ClientID {
 				s.RevokeRefreshFamily(id)

@@ -1,0 +1,256 @@
+{{define "content"}}
+<section>
+  <h2>Active local sessions ({{len .Sessions}})</h2>
+  {{if .Sessions}}
+  <table>
+    <tr><th>Subject</th><th>Flow</th><th>Client</th><th>sid</th><th>Expires</th></tr>
+    {{range .Sessions}}
+    <tr><th scope="row">{{.Subject}}</th><td>{{.Flow}}</td><td>{{.ClientID}}</td><td><code>{{.SID}}</code></td><td>{{.ExpiresAt.Format "15:04:05"}}</td></tr>
+    {{end}}
+  </table>
+  {{else}}<p class="muted">No local sessions.</p>{{end}}
+</section>
+
+<section>
+  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.5rem">
+    <h2 style="margin-bottom:0">Protocol log</h2>
+    <div class="muted" id="log-status">starting...</div>
+  </div>
+  <p class="muted" style="margin-top:.25rem">Every request/response this app made to the OP, oldest first. Expanding an entry keeps it expanded while new events arrive - nothing here auto-collapses.</p>
+
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.75rem 0">
+    <form method="post" action="/inspector/clear" onsubmit="return confirm('Clear the protocol log? This cannot be undone.')"><button class="btn secondary" type="submit">Clear log</button></form>
+    <button class="btn secondary" type="button" id="toggle-pause">Pause live updates</button>
+    <button class="btn secondary" type="button" id="expand-all">Expand all</button>
+    <button class="btn secondary" type="button" id="collapse-all">Collapse all</button>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.35rem;margin:0">
+      <input type="checkbox" id="filter-errors" style="width:auto">
+      Errors/failures only
+    </label>
+  </div>
+
+  <div id="log"></div>
+</section>
+
+<style>
+  .evt { border: 1px solid var(--border); border-radius: 8px; margin-bottom: .5rem; overflow: hidden; }
+  .evt[data-error="true"] { border-color: #dc2626; }
+  .evt summary { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; cursor: pointer; list-style: none; font-weight: normal; }
+  .evt summary::-webkit-details-marker { display: none; }
+  .evt summary::before { content: "\25B8"; display: inline-block; transition: transform 120ms ease; color: var(--accent); flex-shrink: 0; }
+  .evt[open] summary::before { transform: rotate(90deg); }
+  .evt-time { font-family: ui-monospace, monospace; font-size: .75rem; color: #6b7280; white-space: nowrap; }
+  .evt-delta { font-family: ui-monospace, monospace; font-size: .7rem; color: #9ca3af; white-space: nowrap; }
+  .evt-kind { font-family: ui-monospace, monospace; font-size: .75rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap; }
+  .evt-detail { font-size: .85rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .evt-status { font-family: ui-monospace, monospace; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+  .evt-status.ok { color: #16a34a; }
+  .evt-status.err { color: #dc2626; }
+  .evt-body { padding: 0 .75rem .75rem; border-top: 1px solid var(--border); }
+  .evt-body h4 { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; margin: .75rem 0 .25rem; }
+  .evt-body pre { margin: 0; position: relative; }
+  .copy-btn { position: absolute; top: .35rem; right: .35rem; font-size: .7rem; padding: .15rem .5rem; border-radius: 5px; border: 1px solid var(--border); background: var(--bg-soft); cursor: pointer; }
+  .kind-discovery { background: #e0e7ff; color: #3730a3; }
+  .kind-jwks { background: #e0e7ff; color: #3730a3; }
+  .kind-authorize { background: #dbeafe; color: #1e40af; }
+  .kind-callback { background: #dbeafe; color: #1e40af; }
+  .kind-token, .kind-refresh { background: #dcfce7; color: #166534; }
+  .kind-idtoken { background: #fef3c7; color: #92400e; }
+  .kind-userinfo { background: #fce7f3; color: #9d174d; }
+  .kind-introspect, .kind-revoke { background: #f3e8ff; color: #6b21a8; }
+  .kind-register { background: #ffe4e6; color: #9f1239; }
+  .kind-logout { background: #e2e8f0; color: #334155; }
+  .kind-config { background: #f1f5f9; color: #475569; }
+  .kind-other { background: var(--bg-soft); color: #475569; }
+</style>
+
+<script>
+(function () {
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('log-status');
+  const pauseBtn = document.getElementById('toggle-pause');
+  const errFilter = document.getElementById('filter-errors');
+  let paused = false;
+  let lastId = 0;
+  let lastEventTime = null;
+  const seen = new Map(); // id -> event, so re-filtering doesn't need a refetch
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML.replaceAll('"', '&quot;'); }
+
+  function kindFamily(kind) {
+    const k = kind.split('.')[0];
+    if (k === 'discovery') return 'discovery';
+    if (k === 'jwks') return 'jwks';
+    if (k === 'authorize') return 'authorize';
+    if (k === 'callback') return 'callback';
+    if (k === 'token') return 'token';
+    if (k === 'refresh') return 'refresh';
+    if (k === 'idtoken') return 'idtoken';
+    if (k === 'userinfo') return 'userinfo';
+    if (k === 'introspect') return 'introspect';
+    if (k === 'revoke') return 'revoke';
+    if (k === 'register') return 'register';
+    if (k.includes('logout')) return 'logout';
+    if (k === 'config') return 'config';
+    return 'other';
+  }
+
+  function isErrorEvent(e) {
+    return e.kind.includes('error') || e.kind.includes('invalid') || /^HTTP [45]\d\d/.test(e.detail || '');
+  }
+
+  function statusBadge(detail) {
+    const m = /^HTTP (\d\d\d)/.exec(detail || '');
+    if (!m) return '';
+    const code = Number.parseInt(m[1], 10);
+    const cls = code >= 200 && code < 300 ? 'ok' : 'err';
+    return '<span class="evt-status ' + cls + '">' + code + '</span>';
+  }
+
+  // Minimal JWT decode (header + payload only, no verification - this app
+  // already verified id_token/logout_token server-side before logging them;
+  // this is purely a display convenience).
+  function decodeJWT(token) {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    try {
+      const pad = s => s + '==='.slice((s.length + 3) % 4);
+      const b64 = s => new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(pad(s.replaceAll('-', '+').replaceAll('_', '/'))), c => c.codePointAt(0)));
+      return { header: JSON.parse(b64(parts[0])), payload: JSON.parse(b64(parts[1])) };
+    } catch { return null; }
+  }
+
+  // A raw body can be a compact JWT on its own line (logout_token=...), an
+  // application/x-www-form-urlencoded string, or pretty-printed JSON. Pull
+  // out any JWT-shaped tokens so they get their own decoded section instead
+  // of sitting unreadable in the raw blob.
+  function extractJWTs(raw) {
+    if (!raw) return [];
+    const found = [];
+    for (const token of raw.split(/[^A-Za-z0-9_.-]+/)) {
+      const parts = token.split('.');
+      if (parts.length !== 3 || parts[0].length < 10 || parts[1].length < 10 || parts[2].length < 5) continue;
+      const decoded = decodeJWT(token);
+      if (decoded) found.push({ token, decoded });
+    }
+    return found;
+  }
+
+  function copyButton(text) {
+    const id = 'c' + crypto.randomUUID();
+    setTimeout(() => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = 'copied';
+          setTimeout(() => { btn.textContent = 'copy'; }, 1200);
+        });
+      });
+    }, 0);
+    return '<button class="copy-btn" id="' + id + '" type="button">copy</button>';
+  }
+
+  function renderBody(e) {
+    let html = '';
+    if (e.data) {
+      html += '<h4>Parsed</h4><pre>' + copyButton(JSON.stringify(e.data, null, 2)) + esc(JSON.stringify(e.data, null, 2)) + '</pre>';
+    }
+    if (e.raw) {
+      const jwts = extractJWTs(e.raw);
+      html += '<h4>Raw</h4><pre>' + copyButton(e.raw) + esc(e.raw) + '</pre>';
+      jwts.forEach((j, i) => {
+        html += '<h4>Decoded token' + (jwts.length > 1 ? ' ' + (i + 1) : '') + '</h4>';
+        html += '<pre>' + copyButton(JSON.stringify(j.decoded, null, 2)) + esc(JSON.stringify({ header: j.decoded.header, payload: j.decoded.payload }, null, 2)) + '</pre>';
+      });
+    }
+    if (!e.data && !e.raw) html += '<p class="muted" style="margin:.75rem 0">No additional detail recorded for this event.</p>';
+    return html;
+  }
+
+  function renderEvent(e) {
+    const wrap = document.createElement('details');
+    wrap.className = 'evt';
+    wrap.id = 'evt-' + e.id;
+    wrap.dataset.error = String(isErrorEvent(e));
+    wrap.dataset.kind = e.kind;
+    const time = new Date(e.time);
+    let deltaHtml = '';
+    if (lastEventTime) {
+      const deltaMs = time - lastEventTime;
+      if (deltaMs >= 0) deltaHtml = '<span class="evt-delta">+' + (deltaMs < 1000 ? deltaMs + 'ms' : (deltaMs / 1000).toFixed(1) + 's') + '</span>';
+    }
+    lastEventTime = time;
+    const family = kindFamily(e.kind);
+    wrap.innerHTML =
+      '<summary>' +
+      '<span class="evt-time">' + esc(time.toLocaleTimeString()) + '</span>' +
+      deltaHtml +
+      '<span class="evt-kind kind-' + family + '">' + esc(e.kind) + '</span>' +
+      statusBadge(e.detail) +
+      '<span class="evt-detail" title="' + esc(e.detail || '') + '">' + esc(e.detail || '') + '</span>' +
+      '</summary>' +
+      '<div class="evt-body">' + renderBody(e) + '</div>';
+    return wrap;
+  }
+
+  function applyFilter() {
+    const onlyErrors = errFilter.checked;
+    logEl.querySelectorAll('.evt').forEach(el => {
+      el.hidden = onlyErrors && el.dataset.error !== 'true';
+    });
+  }
+
+  function appendEvents(events) {
+    if (!events.length) return;
+    const emptyMsg = logEl.querySelector('.empty-msg');
+    if (emptyMsg) emptyMsg.remove();
+    for (const e of events) {
+      seen.set(e.id, e);
+      logEl.appendChild(renderEvent(e));
+      lastId = Math.max(lastId, e.id);
+    }
+    applyFilter();
+  }
+
+  async function loadInitial() {
+    const res = await fetch('/inspector/events');
+    const events = await res.json();
+    events.sort((a, b) => a.id - b.id);
+    lastEventTime = null;
+    if (!events.length) {
+      logEl.innerHTML = '<p class="muted empty-msg">No events yet - start a flow from the home page.</p>';
+      return;
+    }
+    appendEvents(events);
+  }
+
+  async function poll() {
+    if (paused) return;
+    try {
+      const res = await fetch('/inspector/events?since=' + lastId);
+      const events = await res.json();
+      if (events && events.length) appendEvents(events);
+      statusEl.textContent = 'live – last checked ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      statusEl.textContent = 'connection error, retrying...';
+    }
+  }
+
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume live updates' : 'Pause live updates';
+    statusEl.textContent = paused ? 'paused' : 'live';
+  });
+  errFilter.addEventListener('change', applyFilter);
+  document.getElementById('expand-all').addEventListener('click', () => {
+    logEl.querySelectorAll('.evt').forEach(el => el.open = true);
+  });
+  document.getElementById('collapse-all').addEventListener('click', () => {
+    logEl.querySelectorAll('.evt').forEach(el => el.open = false);
+  });
+
+  loadInitial().then(() => { statusEl.textContent = 'live'; setInterval(poll, 2000); });
+})();
+</script>
+{{end}}

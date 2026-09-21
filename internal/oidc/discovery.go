@@ -14,33 +14,38 @@ import (
 // default (request_parameter_supported, request_uri_parameter_supported,
 // require_request_uri_registration, claims_parameter_supported).
 type discoveryDocument struct {
-	RevocationEndpoint                string   `json:"revocation_endpoint"`
-	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
-	IntrospectionAuthMethods          []string `json:"introspection_endpoint_auth_methods_supported"`
-	RevocationAuthMethods             []string `json:"revocation_endpoint_auth_methods_supported"`
-	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
-	Issuer                            string   `json:"issuer"`
-	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
-	TokenEndpoint                     string   `json:"token_endpoint"`
-	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
-	JWKSURI                           string   `json:"jwks_uri"`
-	ResponseTypesSupported            []string `json:"response_types_supported"`
-	ResponseModesSupported            []string `json:"response_modes_supported"`
-	GrantTypesSupported               []string `json:"grant_types_supported"`
-	SubjectTypesSupported             []string `json:"subject_types_supported"`
-	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
-	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
-	ScopesSupported                   []string `json:"scopes_supported"`
-	ClaimsSupported                   []string `json:"claims_supported"`
-	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
-	RequestParameterSupported         bool     `json:"request_parameter_supported"`
-	RequestURIParameterSupported      bool     `json:"request_uri_parameter_supported"`
-	RequireRequestURIRegistration     bool     `json:"require_request_uri_registration"`
-	ClaimsParameterSupported          bool     `json:"claims_parameter_supported"`
+	EndSessionEndpoint                 string   `json:"end_session_endpoint"`
+	FrontchannelLogoutSupported        bool     `json:"frontchannel_logout_supported"`
+	FrontchannelLogoutSessionSupported bool     `json:"frontchannel_logout_session_supported"`
+	BackchannelLogoutSupported         bool     `json:"backchannel_logout_supported"`
+	BackchannelLogoutSessionSupported  bool     `json:"backchannel_logout_session_supported"`
+	RevocationEndpoint                 string   `json:"revocation_endpoint"`
+	IntrospectionEndpoint              string   `json:"introspection_endpoint"`
+	IntrospectionAuthMethods           []string `json:"introspection_endpoint_auth_methods_supported"`
+	RevocationAuthMethods              []string `json:"revocation_endpoint_auth_methods_supported"`
+	RegistrationEndpoint               string   `json:"registration_endpoint,omitempty"`
+	Issuer                             string   `json:"issuer"`
+	AuthorizationEndpoint              string   `json:"authorization_endpoint"`
+	TokenEndpoint                      string   `json:"token_endpoint"`
+	UserinfoEndpoint                   string   `json:"userinfo_endpoint"`
+	JWKSURI                            string   `json:"jwks_uri"`
+	ResponseTypesSupported             []string `json:"response_types_supported"`
+	ResponseModesSupported             []string `json:"response_modes_supported"`
+	GrantTypesSupported                []string `json:"grant_types_supported"`
+	SubjectTypesSupported              []string `json:"subject_types_supported"`
+	IDTokenSigningAlgValuesSupported   []string `json:"id_token_signing_alg_values_supported"`
+	TokenEndpointAuthMethodsSupported  []string `json:"token_endpoint_auth_methods_supported"`
+	ScopesSupported                    []string `json:"scopes_supported"`
+	ClaimsSupported                    []string `json:"claims_supported"`
+	CodeChallengeMethodsSupported      []string `json:"code_challenge_methods_supported"`
+	RequestParameterSupported          bool     `json:"request_parameter_supported"`
+	RequestURIParameterSupported       bool     `json:"request_uri_parameter_supported"`
+	RequireRequestURIRegistration      bool     `json:"require_request_uri_registration"`
+	ClaimsParameterSupported           bool     `json:"claims_parameter_supported"`
 }
 
 var supportedClaims = []string{
-	"sub", "iss", "aud", "exp", "iat", "auth_time", "nonce",
+	"sid", "sub", "iss", "aud", "exp", "iat", "auth_time", "nonce",
 	"name", "given_name", "family_name", "middle_name", "nickname", "preferred_username",
 	"profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "updated_at",
 	"email", "email_verified",
@@ -55,6 +60,7 @@ func (s *Service) discoveryDocument() discoveryDocument {
 		registrationEndpoint = issuer + "/register"
 	}
 	return discoveryDocument{
+		EndSessionEndpoint: issuer + "/logout", FrontchannelLogoutSupported: true, FrontchannelLogoutSessionSupported: true, BackchannelLogoutSupported: true, BackchannelLogoutSessionSupported: true,
 		RevocationEndpoint: issuer + "/revoke", IntrospectionEndpoint: issuer + "/introspect", IntrospectionAuthMethods: []string{"client_secret_basic", "client_secret_post"}, RevocationAuthMethods: capability.SupportedAuthMethods,
 		RegistrationEndpoint:              registrationEndpoint,
 		Issuer:                            issuer,

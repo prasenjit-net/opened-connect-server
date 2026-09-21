@@ -6,7 +6,7 @@ import { IconDashboard, IconExternal, IconSliders, IconBolt, IconX, IconUsers, I
 import Logo from "./Logo";
 
 interface NavItem {
-  to: "/" | "/components" | "/settings" | "/users" | "/profile" | "/clients" | "/activity/transactions";
+  to: "/sessions" | "/" | "/components" | "/settings" | "/users" | "/profile" | "/clients" | "/activity/transactions";
   admin?: boolean;
   label: string;
   icon: ReactElement;
@@ -18,6 +18,7 @@ const NAV: NavItem[] = [
   { to: "/clients", label: "Clients", icon: <IconBolt size={20} />, admin: true },
   { to: "/activity/transactions", label: "Activity", icon: <IconActivity size={20} />, admin: true },
   { to: "/components", label: "Components", icon: <IconBolt size={20} /> },
+  { to: "/sessions", label: "Your sessions", icon: <IconActivity size={20} /> },
   { to: "/profile", label: "My profile", icon: <IconUsers size={20} /> },
   { to: "/settings", label: "Settings", icon: <IconSliders size={20} /> },
 ];

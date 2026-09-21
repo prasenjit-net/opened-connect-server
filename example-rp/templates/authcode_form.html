@@ -1,0 +1,34 @@
+{{define "content"}}
+<section>
+  <h2>Authorization Code + PKCE</h2>
+  <p class="muted">Redirects to the OP's authorization endpoint with a PKCE S256 challenge (mandatory on this OP) and a nonce. The client below must already be registered on the OP with redirect_uri <code>{{.Config.RedirectURI}}</code> - use <a href="/register">dynamic registration</a> if you don't have one.</p>
+  {{if .DiscoveryError}}<div class="error-box">Could not reach discovery document: {{.DiscoveryError}}</div>{{end}}
+  {{if not .Caps.AuthCode}}<div class="error-box">The connected OP does not advertise authorization_code in grant_types_supported.</div>{{end}}
+
+  {{template "client_picker" .}}
+
+  <form method="post" action="/start/authcode">
+    <div class="row">
+      <div><label for="client_id">Client ID</label><input id="client_id" name="client_id" required></div>
+      <div><label for="client_secret">Client secret (blank for public/none)</label><input id="client_secret" name="client_secret" type="password"></div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="auth_method">Token endpoint auth method</label>
+        <select id="auth_method" name="auth_method">
+          <option value="client_secret_basic">client_secret_basic</option>
+          <option value="client_secret_post">client_secret_post</option>
+          <option value="none">none (public client)</option>
+        </select>
+      </div>
+      <div><label for="scopes">Scopes</label><input id="scopes" name="scopes" value="openid profile email"></div>
+    </div>
+    <label style="font-weight:normal;display:flex;align-items:center;gap:.4rem;margin-top:1rem">
+      <input type="checkbox" name="offline_access" value="1" style="width:auto" {{if not .Caps.OfflineAccessScope}}disabled{{end}}>
+      Request offline_access + prompt=consent (issues a refresh token)
+      {{if not .Caps.OfflineAccessScope}}<span class="muted">- not advertised by this OP</span>{{end}}
+    </label>
+    <p><button class="btn" type="submit">Redirect to authorization endpoint</button></p>
+  </form>
+</section>
+{{end}}

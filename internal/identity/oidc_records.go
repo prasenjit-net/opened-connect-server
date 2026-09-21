@@ -7,6 +7,8 @@ import "time"
 // BrowserBindingHash, which is a SHA-256 hash of a value carried only in a
 // dedicated cookie — never the raw value itself.
 type AuthzTransaction struct {
+	OPSessionID         string    `json:"opSessionId,omitempty"`
+	AppSessionID        string    `json:"appSessionId,omitempty"`
 	Revoked             bool      `json:"revoked,omitempty"`
 	ReauthenticateAfter time.Time `json:"reauthenticateAfter,omitempty"`
 	ID                  string    `json:"id"`
@@ -34,6 +36,8 @@ type AuthzTransaction struct {
 // completes login and consent, exchanged for tokens at /token. Only its
 // hash is persisted; the raw code is never stored.
 type AuthorizationCode struct {
+	OPSessionID         string    `json:"opSessionId,omitempty"`
+	AppSessionID        string    `json:"appSessionId,omitempty"`
 	Revoked             bool      `json:"revoked,omitempty"`
 	CreatedAt           time.Time `json:"createdAt,omitempty"`
 	RetainUntil         time.Time `json:"retainUntil,omitempty"`
@@ -58,6 +62,8 @@ type AuthorizationCode struct {
 // replay of that code (which must otherwise already fail safely) can also
 // revoke the token issued from the original, legitimate exchange.
 type AccessToken struct {
+	OPSessionID      string    `json:"opSessionId,omitempty"`
+	AppSessionID     string    `json:"appSessionId,omitempty"`
 	GrantType        string    `json:"grantType,omitempty"`
 	SubjectKind      string    `json:"subjectKind,omitempty"`
 	FamilyID         string    `json:"familyId,omitempty"`

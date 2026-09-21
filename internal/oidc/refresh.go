@@ -28,7 +28,7 @@ func (s *Service) initialRefresh(tx identity.Tx, clientID string, code identity.
 	if err != nil {
 		return "", "", err
 	}
-	f := identity.RefreshFamily{ID: id, ClientID: clientID, UserID: code.UserID, CodeHash: code.Hash, Audience: "userinfo", Scopes: code.Scopes, AuthTime: code.AuthTime, ClientRevision: c.UpdatedAt.UnixNano(), CreatedAt: now, AbsoluteExpiry: now.Add(s.Config.RefreshMaxTTL), IdleExpiry: now.Add(s.Config.RefreshInactivityTTL), RetainUntil: now.Add(s.Config.RefreshMaxTTL + s.Config.AccessTokenTTL)}
+	f := identity.RefreshFamily{AppSessionID: code.AppSessionID, OPSessionID: code.OPSessionID, ID: id, ClientID: clientID, UserID: code.UserID, CodeHash: code.Hash, Audience: "userinfo", Scopes: code.Scopes, AuthTime: code.AuthTime, ClientRevision: c.UpdatedAt.UnixNano(), CreatedAt: now, AbsoluteExpiry: now.Add(s.Config.RefreshMaxTTL), IdleExpiry: now.Add(s.Config.RefreshInactivityTTL), RetainUntil: now.Add(s.Config.RefreshMaxTTL + s.Config.AccessTokenTTL)}
 	active, err := identity.RefreshFamilyActive(tx, f, now)
 	if err != nil {
 		return "", "", err
@@ -112,7 +112,7 @@ func (s *Service) refreshToken(w http.ResponseWriter, r *http.Request, form url.
 		f.IdleExpiry = minTime(now.Add(s.Config.RefreshInactivityTTL), f.AbsoluteExpiry)
 		tx.SaveRefreshFamily(f)
 		tx.SaveRefreshToken(identity.RefreshToken{Hash: hashToken(next), FamilyID: f.ID, Scopes: scopes, IssuedAt: now})
-		tx.SaveAccessToken(identity.AccessToken{Hash: hashToken(access), ClientID: c.ID, UserID: f.UserID, SubjectKind: "user", GrantType: "refresh_token", OriginalGrant: "authorization_code", FamilyID: f.ID, CodeHash: f.CodeHash, Audience: f.Audience, Scopes: scopes, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
+		tx.SaveAccessToken(identity.AccessToken{AppSessionID: f.AppSessionID, OPSessionID: f.OPSessionID, Hash: hashToken(access), ClientID: c.ID, UserID: f.UserID, SubjectKind: "user", GrantType: "refresh_token", OriginalGrant: "authorization_code", FamilyID: f.ID, CodeHash: f.CodeHash, Audience: f.Audience, Scopes: scopes, IssuedAt: now, ExpiresAt: now.Add(s.Config.AccessTokenTTL)})
 		tx.PruneOIDCState(now)
 		response = tokenResponse{AccessToken: access, RefreshToken: next, TokenType: "Bearer", ExpiresIn: int64(s.Config.AccessTokenTTL.Seconds()), Scope: strings.Join(scopes, " ")}
 		return nil

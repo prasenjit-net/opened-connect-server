@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +70,7 @@ type UIConfig struct {
 // OIDCConfig configures the OpenID Connect provider surface (discovery,
 // JWKS, /authorize, /token, /userinfo) and refresh-token lifetime bounds.
 type OIDCConfig struct {
+	LogoutAllowedCIDRs   []string      `mapstructure:"logoutAllowedCIDRs" yaml:"logoutAllowedCIDRs"`
 	RegistrationEnabled  bool          `mapstructure:"registrationEnabled" yaml:"registrationEnabled"`
 	AllowedOrigins       []string      `mapstructure:"allowedOrigins" yaml:"allowedOrigins"`
 	Enabled              bool          `mapstructure:"enabled" yaml:"enabled"`
@@ -156,6 +159,7 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("ui.defaultTheme", defaults.UI.DefaultTheme)
 	v.SetDefault("ui.repoURL", defaults.UI.RepoURL)
 
+	v.SetDefault("oidc.logoutAllowedCIDRs", []string{})
 	v.SetDefault("oidc.enabled", defaults.OIDC.Enabled)
 	v.SetDefault("oidc.registrationEnabled", false)
 	v.SetDefault("oidc.issuer", defaults.OIDC.Issuer)
@@ -216,6 +220,11 @@ func Load(v *viper.Viper) (Config, error) {
 	}
 	if cfg.OIDC.RegistrationEnabled && !cfg.OIDC.Enabled {
 		return Config{}, fmt.Errorf("oidc.registrationEnabled requires oidc.enabled")
+	}
+	for _, cidr := range cfg.OIDC.LogoutAllowedCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return Config{}, fmt.Errorf("oidc.logoutAllowedCIDRs must contain valid IP CIDRs")
+		}
 	}
 	if cfg.OIDC.Enabled {
 		if strings.TrimSpace(cfg.OIDC.Issuer) == "" {
@@ -334,6 +343,7 @@ ui:
 #   enabled: false
 #   registrationEnabled: false # token-protected dynamic client registration
 #   issuer: https://identity.example.com # defaults to app.url when unset
+#   logoutAllowedCIDRs: [] # optional trusted internal RP networks; never use an unrestricted range
 #   allowedOrigins: [] # exact browser client origins, e.g. [https://app.example.com]
 #   transactionTTL: 10m
 #   codeTTL: 60s

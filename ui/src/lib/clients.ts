@@ -24,6 +24,11 @@ export interface ClientResult extends OIDCClient { client_secret?: string; }
 export interface ClientList { clients: OIDCClient[]; total: number; page: number; pageSize: number; }
 
 export const metadataSections = [
+ { title: "Logout", description: "Register server notifications, browser logout, and exact return URLs. Back-channel logout can terminate remote sessions without a browser.", fields: [
+  ["backchannel_logout_uri", "Back-channel logout URI", "url"], ["backchannel_logout_session_required", "Require session ID for back-channel logout", "boolean"],
+  ["frontchannel_logout_uri", "Front-channel logout URI", "url"], ["frontchannel_logout_session_required", "Require session ID for front-channel logout", "boolean"],
+  ["post_logout_redirect_uris", "Post-logout redirect URIs", "list"],
+ ] },
  { title: "Application and redirects", description: "Start here: identify the application and set its allowed sign-in callback URLs.", fields: [
   ["client_name", "Client name", "text"], ["application_type", "Application type", "application"],
   ["redirect_uris", "Redirect URIs", "list"],

@@ -178,10 +178,14 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 		h.failure(w, err)
 		return
 	}
+	_ = h.service.ObserveSession(r.Context(), result.Session.Hash, r.UserAgent())
 	h.cookie(w, result.Token, result.Session.ExpiresAt)
 	respondJSON(w, 200, sessionResponse(result.Principal))
 }
 func (h *authHandler) session(w http.ResponseWriter, r *http.Request) {
+	if time.Since(current(r).Session.LastSeenAt) > time.Minute {
+		_ = h.service.ObserveSession(r.Context(), current(r).Session.Hash, r.UserAgent())
+	}
 	respondJSON(w, 200, sessionResponse(current(r)))
 }
 func (h *authHandler) logout(w http.ResponseWriter, r *http.Request) {

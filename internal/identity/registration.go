@@ -207,13 +207,13 @@ func dynamicMetadata(input ClientMetadata, allowHTTP bool) (ClientMetadata, erro
 	filtered := ClientMetadata{}
 	var grants []string
 	_ = json.Unmarshal(input["grant_types"], &grants)
-	if len(grants) > 0 && !slices.Contains(grants, "authorization_code") {
-		return fail("invalid_client_metadata", "OIDC registration requires authorization_code; OAuth-only clients must be created by an admin.")
-	}
 	for _, g := range grants {
-		if g == "client_credentials" || g == "password" {
-			return fail("invalid_client_metadata", "Machine and password grants require admin registration.")
+		if g == "password" {
+			return fail("invalid_client_metadata", "The password grant requires admin registration.")
 		}
+	}
+	if len(grants) > 0 && !slices.Contains(grants, "authorization_code") && !slices.Contains(grants, "client_credentials") {
+		return fail("invalid_client_metadata", "Registration requires authorization_code or client_credentials.")
 	}
 
 	for k, v := range input {
@@ -237,6 +237,9 @@ func dynamicMetadata(input ClientMetadata, allowHTTP bool) (ClientMetadata, erro
 	if ok, reasons := auditMetadata(m); !ok {
 		return fail("invalid_client_metadata", strings.Join(reasons, "; "))
 	}
+	if slices.Contains(m.list("grant_types"), "client_credentials") && !slices.Contains([]string{"client_secret_basic", "client_secret_post"}, m.text("token_endpoint_auth_method")) {
+		return fail("invalid_client_metadata", "client_credentials requires client_secret_basic or client_secret_post authentication.")
+	}
 	for _, k := range []string{"sector_identifier_uri", "request_object_signing_alg", "request_object_encryption_alg", "request_object_encryption_enc"} {
 		if m.text(k) != "" {
 			return fail("invalid_client_metadata", k+" is not supported by this provider.")
@@ -244,6 +247,11 @@ func dynamicMetadata(input ClientMetadata, allowHTTP bool) (ClientMetadata, erro
 	}
 	if len(m.list("request_uris")) > 0 || len(m.list("default_acr_values")) > 0 {
 		return fail("invalid_client_metadata", "Request objects and default ACR values are not supported.")
+	}
+	for _, raw := range append(append(m.list("post_logout_redirect_uris"), m.text("frontchannel_logout_uri")), m.text("backchannel_logout_uri")) {
+		if raw != "" && !allowHTTP && !strings.HasPrefix(raw, "https://") {
+			return nil, &RegistrationError{"invalid_client_metadata", "Logout URLs must use HTTPS."}
+		}
 	}
 	for _, raw := range m.list("redirect_uris") {
 		u, _ := url.Parse(raw)

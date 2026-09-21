@@ -1,0 +1,16 @@
+{{define "content"}}
+<section class="ok-box">
+  <strong>client_credentials grant succeeded.</strong> This token is not tied to a browser session (there's no user), so it's shown here rather than on the profile page.
+</section>
+<section>
+  <h2>Token response</h2>
+  <table>
+    <tr><th scope="row">access_token</th><td style="word-break:break-all"><code>{{.Token.AccessToken}}</code></td></tr>
+    <tr><th scope="row">token_type</th><td>{{.Token.TokenType}}</td></tr>
+    <tr><th scope="row">expires_in</th><td>{{.Token.ExpiresIn}}s</td></tr>
+    <tr><th scope="row">scope</th><td>{{.Token.Scope}}</td></tr>
+  </table>
+  <p class="muted">Access tokens on this OP are opaque (not JWTs) - use <a href="/inspector">the inspector</a> to see the raw HTTP exchange, or introspect it via the OP's /introspect endpoint.</p>
+  <p><a class="btn secondary" href="/start/client-credentials">Run again</a> <a class="btn secondary" href="/inspector">Open inspector</a></p>
+</section>
+{{end}}

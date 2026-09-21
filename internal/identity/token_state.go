@@ -12,6 +12,15 @@ func AccessTokenActive(tx ReadTx, t AccessToken, now time.Time, resources []Reso
 	if t.Revoked || !now.Before(t.ExpiresAt) {
 		return false, nil
 	}
+	if t.OPSessionID != "" && t.FamilyID == "" {
+		if !SessionActive(tx, t.OPSessionID, now) {
+			return false, nil
+		}
+		a, e := tx.AppSession(t.AppSessionID)
+		if e != nil || !a.EndedAt.IsZero() {
+			return false, nil
+		}
+	}
 	c, err := tx.Client(t.ClientID)
 	if errors.Is(err, ErrNotFound) {
 		return false, nil

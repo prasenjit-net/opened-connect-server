@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCSRFToken(session.csrfToken);
     client.setQueryData(["session"], session);
   };
-  const logout = async () => { await api.logout(); forget(); };
+  const logout = async () => { const result = await api.prepareLogout(); if (result.continueTo) { window.location.assign(result.continueTo); return; } await api.logout(); forget(); };
   const refresh = async () => { await query.refetch(); };
 
   return <AuthContext.Provider value={{ user: query.data?.user ?? null, loading: query.isPending, error: query.error, login, logout, refresh, forget }}>{children}</AuthContext.Provider>;

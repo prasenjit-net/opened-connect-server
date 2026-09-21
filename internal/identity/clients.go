@@ -141,6 +141,9 @@ func (s *Service) SaveClient(ctx context.Context, hash, id string, input ClientM
 			return err
 		}
 		m, err := normalizeClientMetadata(input)
+		if err == nil {
+			err = validateLogoutTransport(m, s.allowLogoutHTTP)
+		}
 		if err != nil {
 			return err
 		}
