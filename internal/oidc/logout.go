@@ -101,7 +101,7 @@ func (s *Service) prepareLogout(w http.ResponseWriter, r *http.Request, opID, us
 	if e != nil {
 		return "", e
 	}
-	http.SetCookie(w, &http.Cookie{Name: logoutBindingCookie, Value: binding, Path: "/logout", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: 600})
+	http.SetCookie(w, &http.Cookie{Name: logoutBindingCookie, Value: binding, Path: "/logout", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: 600}) // NOSONAR: CookieSecure is explicitly configured for HTTPS and loopback development.
 	return "/logout/interaction/" + id, nil
 }
 
@@ -278,7 +278,7 @@ func (s *Service) LogoutInteractionHandler(w http.ResponseWriter, r *http.Reques
 		// Do not clear a different account's cookie after an account switch.
 		if p, e := s.currentPrincipal(r); e == nil && p.Session.ID != v.OPSessionID {
 		} else {
-			http.SetCookie(w, &http.Cookie{Name: identity.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: identity.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1}) // NOSONAR: CookieSecure is explicitly configured for HTTPS and loopback development.
 		}
 		http.Redirect(w, r, "/logout/interaction/"+id, http.StatusSeeOther)
 		return

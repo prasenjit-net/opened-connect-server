@@ -57,7 +57,7 @@ export default function SessionsPage({kind: initialKind = "op-sessions", admin =
     {(selected?.scope || selected?.userId) && <label><input type="checkbox" checked={offline} onChange={e => setOffline(e.target.checked)}/> Also revoke all approved offline access</label>}
     {(selected?.scope || selected?.revoke || selected?.userId) && <label className="flex flex-col gap-1">Confirm your password<input className="input" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/></label>}
     {mutation.error && <p role="alert">{mutation.error.message}</p>}
-    <div className="flex gap-2"><button className="btn btn-primary" disabled={mutation.isPending}>Confirm</button><button className="btn btn-secondary" type="button" onClick={() => setSelected(null)}>Cancel</button></div>
+	    <div className="flex gap-2"><button className="btn btn-primary" type="submit" disabled={mutation.isPending}>Confirm</button><button className="btn btn-secondary" type="button" onClick={() => setSelected(null)}>Cancel</button></div>
    </form>
   </dialog>
  </div>;

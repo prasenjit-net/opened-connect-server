@@ -154,7 +154,7 @@ func (s *Service) sendLogout(ctx context.Context, d identity.LogoutDelivery) (in
 		return 0, 0, "signing_unavailable"
 	}
 	now := s.Now()
-	claims := map[string]any{"iss": s.Config.Issuer, "aud": d.ClientID, "iat": now.Unix(), "exp": now.Add(2 * time.Minute).Unix(), "jti": jti, "sid": d.AppSessionID, "sub": d.Subject, "events": map[string]any{"http://schemas.openid.net/event/backchannel-logout": map[string]any{}}}
+	claims := map[string]any{"iss": s.Config.Issuer, "aud": d.ClientID, "iat": now.Unix(), "exp": now.Add(2 * time.Minute).Unix(), "jti": jti, "sid": d.AppSessionID, "sub": d.Subject, "events": map[string]any{"http://schemas.openid.net/event/backchannel-logout": map[string]any{}}} // NOSONAR: this is the exact OIDC Back-Channel Logout event claim URI, not a transport URL.
 	if d.Subject == "" {
 		delete(claims, "sub")
 	}
