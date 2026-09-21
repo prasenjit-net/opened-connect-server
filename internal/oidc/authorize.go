@@ -32,7 +32,7 @@ func (s *Service) currentPrincipal(r *http.Request) (identity.Principal, error) 
 }
 
 func clearSessionCookie(w http.ResponseWriter, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // NOSONAR: match the configured Secure attribute when expiring HTTPS or development HTTP session cookies.
 		Name: identity.SessionCookieName, Value: "", Path: "/", HttpOnly: true,
 		Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0),
 	})
@@ -251,7 +251,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // NOSONAR: CookieSecure enables HTTPS protection while supporting explicitly configured development HTTP.
 		Name: authzBindingCookieName, Value: binding, Path: "/", HttpOnly: true,
 		Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
 		MaxAge: int(s.Config.TransactionTTL.Seconds()),

@@ -292,7 +292,7 @@ func verifyLogoutToken(raw string, jwks *jose.JSONWebKeySet, issuer string) (map
 		return claims, fmt.Errorf("logout token must not contain a nonce claim")
 	}
 	events, _ := claims["events"].(map[string]any)
-	if events == nil || events["http://schemas.openid.net/event/backchannel-logout"] == nil {
+	if events == nil || events["http://schemas.openid.net/event/backchannel-logout"] == nil { // NOSONAR: OIDC specifies this exact event identifier; it is never fetched over HTTP.
 		return claims, fmt.Errorf("missing backchannel-logout event claim")
 	}
 	if _, ok := claims["sid"].(string); !ok {

@@ -5,7 +5,7 @@
   <table>
     <tr><th>Subject</th><th>Flow</th><th>Client</th><th>sid</th><th>Expires</th></tr>
     {{range .Sessions}}
-    <tr><td>{{.Subject}}</td><td>{{.Flow}}</td><td>{{.ClientID}}</td><td><code>{{.SID}}</code></td><td>{{.ExpiresAt.Format "15:04:05"}}</td></tr>
+    <tr><th scope="row">{{.Subject}}</th><td>{{.Flow}}</td><td>{{.ClientID}}</td><td><code>{{.SID}}</code></td><td>{{.ExpiresAt.Format "15:04:05"}}</td></tr>
     {{end}}
   </table>
   {{else}}<p class="muted">No local sessions.</p>{{end}}
@@ -75,7 +75,7 @@
   let lastEventTime = null;
   const seen = new Map(); // id -> event, so re-filtering doesn't need a refetch
 
-  function esc(s) { const d = document.createElement('div'); d.innerText = s; return d.innerHTML; }
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML.replaceAll('"', '&quot;'); }
 
   function kindFamily(kind) {
     const k = kind.split('.')[0];
@@ -102,7 +102,7 @@
   function statusBadge(detail) {
     const m = /^HTTP (\d\d\d)/.exec(detail || '');
     if (!m) return '';
-    const code = parseInt(m[1], 10);
+    const code = Number.parseInt(m[1], 10);
     const cls = code >= 200 && code < 300 ? 'ok' : 'err';
     return '<span class="evt-status ' + cls + '">' + code + '</span>';
   }
@@ -115,13 +115,9 @@
     if (parts.length < 2) return null;
     try {
       const pad = s => s + '==='.slice((s.length + 3) % 4);
-      const b64 = s => decodeURIComponent(atob(pad(s.replace(/-/g, '+').replace(/_/g, '/'))).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+      const b64 = s => new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(pad(s.replaceAll('-', '+').replaceAll('_', '/'))), c => c.codePointAt(0)));
       return { header: JSON.parse(b64(parts[0])), payload: JSON.parse(b64(parts[1])) };
     } catch { return null; }
-  }
-
-  function looksLikeJWT(s) {
-    return typeof s === 'string' && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(s.trim());
   }
 
   // A raw body can be a compact JWT on its own line (logout_token=...), an
@@ -131,17 +127,17 @@
   function extractJWTs(raw) {
     if (!raw) return [];
     const found = [];
-    const re = /[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g;
-    let m;
-    while ((m = re.exec(raw)) !== null) {
-      const decoded = decodeJWT(m[0]);
-      if (decoded) found.push({ token: m[0], decoded });
+    for (const token of raw.split(/[^A-Za-z0-9_.-]+/)) {
+      const parts = token.split('.');
+      if (parts.length !== 3 || parts[0].length < 10 || parts[1].length < 10 || parts[2].length < 5) continue;
+      const decoded = decodeJWT(token);
+      if (decoded) found.push({ token, decoded });
     }
     return found;
   }
 
   function copyButton(text) {
-    const id = 'c' + Math.random().toString(36).slice(2);
+    const id = 'c' + crypto.randomUUID();
     setTimeout(() => {
       const btn = document.getElementById(id);
       if (!btn) return;

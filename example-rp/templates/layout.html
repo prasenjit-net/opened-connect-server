@@ -55,7 +55,7 @@
 {{define "client_picker"}}
 {{if .Clients}}
 <div class="flow-card" style="margin-bottom:1rem;background:var(--bg-soft)">
-  <label style="margin-top:0">Use a saved client</label>
+  <label for="client-picker" style="margin-top:0">Use a saved client</label>
   <select id="client-picker" onchange="applySavedClient(this)">
     <option value="">- pick one -</option>
     {{range .Clients}}

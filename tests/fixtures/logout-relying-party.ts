@@ -39,7 +39,7 @@ export async function startLogoutRP() {
     let body="";for await (const chunk of req){body+=String(chunk);if(body.length>16000)throw new Error("Oversized request");}
     const raw=new URLSearchParams(body).get("logout_token");if(!raw)throw new Error("Missing token");
     const {payload,protectedHeader}=await jwtVerify(raw,jwks,{issuer:BASE_URL,audience:clientId,algorithms:["RS256"]});
-    if(protectedHeader.typ!=="logout+jwt" || payload.nonce!==undefined || typeof payload.sid!=="string" || !payload.jti || !payload.events || !(payload.events as Record<string,unknown>)["http://schemas.openid.net/event/backchannel-logout"])throw new Error("Invalid logout claims");
+    if(protectedHeader.typ!=="logout+jwt" || payload.nonce!==undefined || typeof payload.sid!=="string" || !payload.jti || !payload.events || !(payload.events as Record<string,unknown>)["http://schemas.openid.net/event/backchannel-logout"])throw new Error("Invalid logout claims"); // NOSONAR: required OIDC event identifier, never used for HTTP transport.
     for(const [key,sid] of sessions){if(sid===payload.sid)sessions.delete(key);}
     notifications.push(payload.sid);res.writeHead(200);res.end();return;
    }
@@ -49,7 +49,8 @@ export async function startLogoutRP() {
     res.setHeader("Cache-Control","no-store");res.end("Logout processed");return;
    }
    if(url.pathname==="/local-logout"){
-    if(cookie)sessions.delete(cookie);res.setHeader("Set-Cookie",`${cookieName}=; Max-Age=0; Path=/`);res.end("Locally signed out");return;
+    if(cookie) { sessions.delete(cookie); }
+    res.setHeader("Set-Cookie",`${cookieName}=; Max-Age=0; Path=/`);res.end("Locally signed out");return;
    }
    if(url.pathname==="/protected"){
     const active=!!cookie && sessions.has(cookie);res.writeHead(active?200:401,{"Content-Type":"text/html"});res.end(`<h1>${active?"Signed in to app":"App session ended"}</h1>`);return;

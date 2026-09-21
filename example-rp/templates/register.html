@@ -11,21 +11,21 @@
   <div class="ok-box">
     <strong>Registered.</strong> Use these anywhere a flow form asks for client credentials:
     <table>
-      <tr><td>client_id</td><td><code>{{.NewClientID}}</code></td></tr>
-      {{if .NewClientSecret}}<tr><td>client_secret</td><td><code>{{.NewClientSecret}}</code></td></tr>{{end}}
-      <tr><td>auth method</td><td><code>{{.NewAuthMethod}}</code></td></tr>
+      <tr><th scope="row">client_id</th><td><code>{{.NewClientID}}</code></td></tr>
+      {{if .NewClientSecret}}<tr><th scope="row">client_secret</th><td><code>{{.NewClientSecret}}</code></td></tr>{{end}}
+      <tr><th scope="row">auth method</th><td><code>{{.NewAuthMethod}}</code></td></tr>
     </table>
   </div>
   {{end}}
 
   <form method="post" action="/register">
-    <label>Initial access token</label>
-    <input name="initial_access_token" placeholder="iat_...">
+    <label for="initial_access_token">Initial access token</label>
+    <input id="initial_access_token" name="initial_access_token" placeholder="iat_...">
     <div class="row">
-      <div><label>Redirect URI to register</label><input name="redirect_uri" value="{{.Config.RedirectURI}}"></div>
+      <div><label for="redirect_uri">Redirect URI to register</label><input id="redirect_uri" name="redirect_uri" value="{{.Config.RedirectURI}}"></div>
       <div>
-        <label>Token endpoint auth method to register</label>
-        <select name="auth_method">
+        <label for="auth_method">Token endpoint auth method to register</label>
+        <select id="auth_method" name="auth_method">
           <option value="client_secret_basic">client_secret_basic</option>
           <option value="client_secret_post">client_secret_post</option>
           <option value="none">none (public client)</option>

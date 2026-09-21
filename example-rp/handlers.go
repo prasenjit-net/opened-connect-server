@@ -503,11 +503,12 @@ func (a *App) finishLogin(w http.ResponseWriter, r *http.Request, disc *Discover
 	}
 
 	a.store.putSession(sess)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // NOSONAR: Secure follows the configured public HTTPS URL, with HTTP retained for the development harness.
 		Name:     sessionCookieName,
 		Value:    sess.Cookie,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   strings.HasPrefix(a.cfg.RedirectURI, "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/profile", http.StatusFound)
@@ -737,7 +738,7 @@ func (a *App) handleLogoutLocal(w http.ResponseWriter, r *http.Request) {
 		a.store.deleteSession(c.Value)
 		a.store.log("logout.local", "local session cleared without contacting the OP", nil, "")
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: strings.HasPrefix(a.cfg.RedirectURI, "https://"), SameSite: http.SameSiteLaxMode}) // NOSONAR: Secure follows the configured public URL; local HTTP development must also clear its cookie.
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

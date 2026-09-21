@@ -2,8 +2,8 @@
 <section>
   <h2>Connected OP</h2>
   <table>
-    <tr><td>Issuer</td><td><code>{{.Config.Issuer}}</code></td></tr>
-    <tr><td>Saved clients</td><td>{{.ClientCount}} - <a href="/config">manage on the config page</a></td></tr>
+    <tr><th scope="row">Issuer</th><td><code>{{.Config.Issuer}}</code></td></tr>
+    <tr><th scope="row">Saved clients</th><td>{{.ClientCount}} - <a href="/config">manage on the config page</a></td></tr>
   </table>
   {{if .DiscoveryError}}<div class="error-box" style="margin-top:.75rem">Could not reach discovery document: {{.DiscoveryError}}</div>{{end}}
 </section>
@@ -54,20 +54,20 @@
 <section>
   <h2>OP capabilities (from live discovery)</h2>
   <table>
-    <tr><td>authorization_code</td><td>{{.Caps.AuthCode}}</td></tr>
-    <tr><td>password</td><td>{{.Caps.Password}}</td></tr>
-    <tr><td>client_credentials</td><td>{{.Caps.ClientCredentials}}</td></tr>
-    <tr><td>refresh_token</td><td>{{.Caps.RefreshToken}}</td></tr>
-    <tr><td>offline_access scope</td><td>{{.Caps.OfflineAccessScope}}</td></tr>
-    <tr><td>PKCE S256</td><td>{{.Caps.PKCES256}}</td></tr>
-    <tr><td>dynamic registration</td><td>{{.Caps.DynamicRegistration}}</td></tr>
-    <tr><td>end_session (RP logout)</td><td>{{.Caps.EndSession}}</td></tr>
-    <tr><td>frontchannel_logout</td><td>{{.Caps.FrontChannelLogout}}</td></tr>
-    <tr><td>backchannel_logout</td><td>{{.Caps.BackChannelLogout}}</td></tr>
-    <tr><td>introspection</td><td>{{.Caps.Introspection}}</td></tr>
-    <tr><td>revocation</td><td>{{.Caps.Revocation}}</td></tr>
-    <tr><td>token_endpoint_auth_methods</td><td>{{range .Caps.AuthMethods}}<span class="pill">{{.}}</span> {{end}}</td></tr>
-    <tr><td>scopes_supported</td><td>{{range .Caps.Scopes}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><th scope="row">authorization_code</th><td>{{.Caps.AuthCode}}</td></tr>
+    <tr><th scope="row">password</th><td>{{.Caps.Password}}</td></tr>
+    <tr><th scope="row">client_credentials</th><td>{{.Caps.ClientCredentials}}</td></tr>
+    <tr><th scope="row">refresh_token</th><td>{{.Caps.RefreshToken}}</td></tr>
+    <tr><th scope="row">offline_access scope</th><td>{{.Caps.OfflineAccessScope}}</td></tr>
+    <tr><th scope="row">PKCE S256</th><td>{{.Caps.PKCES256}}</td></tr>
+    <tr><th scope="row">dynamic registration</th><td>{{.Caps.DynamicRegistration}}</td></tr>
+    <tr><th scope="row">end_session (RP logout)</th><td>{{.Caps.EndSession}}</td></tr>
+    <tr><th scope="row">frontchannel_logout</th><td>{{.Caps.FrontChannelLogout}}</td></tr>
+    <tr><th scope="row">backchannel_logout</th><td>{{.Caps.BackChannelLogout}}</td></tr>
+    <tr><th scope="row">introspection</th><td>{{.Caps.Introspection}}</td></tr>
+    <tr><th scope="row">revocation</th><td>{{.Caps.Revocation}}</td></tr>
+    <tr><th scope="row">token_endpoint_auth_methods</th><td>{{range .Caps.AuthMethods}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><th scope="row">scopes_supported</th><td>{{range .Caps.Scopes}}<span class="pill">{{.}}</span> {{end}}</td></tr>
   </table>
 </section>
 {{end}}

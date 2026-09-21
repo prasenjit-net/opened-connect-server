@@ -9,19 +9,19 @@
 
   <form method="post" action="/start/authcode">
     <div class="row">
-      <div><label>Client ID</label><input name="client_id" required></div>
-      <div><label>Client secret (blank for public/none)</label><input name="client_secret" type="password"></div>
+      <div><label for="client_id">Client ID</label><input id="client_id" name="client_id" required></div>
+      <div><label for="client_secret">Client secret (blank for public/none)</label><input id="client_secret" name="client_secret" type="password"></div>
     </div>
     <div class="row">
       <div>
-        <label>Token endpoint auth method</label>
-        <select name="auth_method">
+        <label for="auth_method">Token endpoint auth method</label>
+        <select id="auth_method" name="auth_method">
           <option value="client_secret_basic">client_secret_basic</option>
           <option value="client_secret_post">client_secret_post</option>
           <option value="none">none (public client)</option>
         </select>
       </div>
-      <div><label>Scopes</label><input name="scopes" value="openid profile email"></div>
+      <div><label for="scopes">Scopes</label><input id="scopes" name="scopes" value="openid profile email"></div>
     </div>
     <label style="font-weight:normal;display:flex;align-items:center;gap:.4rem;margin-top:1rem">
       <input type="checkbox" name="offline_access" value="1" style="width:auto" {{if not .Caps.OfflineAccessScope}}disabled{{end}}>

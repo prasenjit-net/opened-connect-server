@@ -2,13 +2,13 @@
 <section>
   <h2>Session</h2>
   <table>
-    <tr><td>Subject</td><td><code>{{.Session.Subject}}</code></td></tr>
-    <tr><td>Flow</td><td><span class="pill">{{.Session.Flow}}</span></td></tr>
-    <tr><td>Client ID</td><td><code>{{.Session.ClientID}}</code></td></tr>
-    <tr><td>Auth method</td><td>{{.Session.AuthMethod}}</td></tr>
-    <tr><td>sid</td><td><code>{{.Session.SID}}</code></td></tr>
-    <tr><td>Access token expires</td><td>{{.Session.ExpiresAt.Format "15:04:05"}}</td></tr>
-    <tr><td>Has refresh token</td><td>{{if .Session.RefreshToken}}yes{{else}}no{{end}}</td></tr>
+    <tr><th scope="row">Subject</th><td><code>{{.Session.Subject}}</code></td></tr>
+    <tr><th scope="row">Flow</th><td><span class="pill">{{.Session.Flow}}</span></td></tr>
+    <tr><th scope="row">Client ID</th><td><code>{{.Session.ClientID}}</code></td></tr>
+    <tr><th scope="row">Auth method</th><td>{{.Session.AuthMethod}}</td></tr>
+    <tr><th scope="row">sid</th><td><code>{{.Session.SID}}</code></td></tr>
+    <tr><th scope="row">Access token expires</th><td>{{.Session.ExpiresAt.Format "15:04:05"}}</td></tr>
+    <tr><th scope="row">Has refresh token</th><td>{{if .Session.RefreshToken}}yes{{else}}no{{end}}</td></tr>
   </table>
   <p>
     <form style="display:inline" method="post" action="/userinfo/refresh"><button class="btn" type="submit">Call /userinfo</button></form>
