@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -201,13 +202,17 @@ func (a *App) handleRegisterSubmit(w http.ResponseWriter, r *http.Request) {
 
 	metadata := map[string]any{
 		"client_name":                "example-rp (dynamically registered)",
-		"redirect_uris":              []string{redirectURI},
 		"grant_types":                grantTypes,
-		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": authMethod,
-		"post_logout_redirect_uris":  []string{a.cfg.PostLogoutRedirectURI},
-		"frontchannel_logout_uri":    a.cfg.FrontChannelLogoutURI,
-		"backchannel_logout_uri":     a.cfg.BackChannelLogoutURI,
+	}
+	if slices.Contains(grantTypes, "authorization_code") {
+		metadata["redirect_uris"] = []string{redirectURI}
+		metadata["response_types"] = []string{"code"}
+		metadata["post_logout_redirect_uris"] = []string{a.cfg.PostLogoutRedirectURI}
+		metadata["frontchannel_logout_uri"] = a.cfg.FrontChannelLogoutURI
+		metadata["backchannel_logout_uri"] = a.cfg.BackChannelLogoutURI
+	} else {
+		metadata["response_types"] = []string{}
 	}
 
 	result, err := dynamicRegister(a.store, disc, iat, metadata)

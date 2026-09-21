@@ -38,7 +38,7 @@
       <div><label style="font-weight:normal"><input type="checkbox" name="grant_types" value="refresh_token" style="width:auto;display:inline"> refresh_token</label></div>
       <div><label style="font-weight:normal"><input type="checkbox" name="grant_types" value="client_credentials" style="width:auto;display:inline"> client_credentials</label></div>
     </div>
-    <p class="muted">Registers with front/back-channel logout URIs pointing at this app (<code>{{.Config.FrontChannelLogoutURI}}</code>, <code>{{.Config.BackChannelLogoutURI}}</code>) and post_logout_redirect_uri <code>{{.Config.PostLogoutRedirectURI}}</code>.</p>
+    <p class="muted">Authorization-code clients register this app's redirect and logout URLs. A client_credentials-only registration has no browser redirects; an OP administrator must still approve its OAuth grant, API resources, and scopes before it can receive tokens.</p>
     <p><button class="btn" type="submit">Register client</button></p>
   </form>
 

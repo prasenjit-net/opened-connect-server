@@ -54,7 +54,7 @@ Store policy outside user-controlled registration metadata. Expose it through `/
 
 For the legacy password phase, add admin-managed per-user resource entitlements through `/api/admin/users/{id}/oauth-access`. A user's permitted scopes are the intersection of their entitlement, the client's policy, and the resource's supported scopes. No entitlement means no API access. Profile claims and custom attributes cannot grant entitlements. Application `admin` and `user` roles are not automatically OAuth scopes or API resource permissions.
 
-Dynamically registered clients receive no machine-grant, password-grant, refresh-issuance, or introspection privilege automatically. Reject attempts to set these admin-owned policy fields through registration/configuration APIs. Keep OIDC `/register` semantics and required redirect metadata; create OAuth-only clients through admin management in this release. Supporting general OAuth dynamic registration is a separate extension.
+Dynamically registered clients receive no machine-grant, password-grant, refresh-issuance, or introspection privilege automatically. Reject attempts to set these admin-owned policy fields through registration/configuration APIs. Confidential `client_credentials` clients may be dynamically registered with no redirect metadata, but an administrator must later approve the grant, API resources, and scopes before a token can be issued. Password clients remain admin-created only.
 
 ## 4. Protocol routes and credentials
 
