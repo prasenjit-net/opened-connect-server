@@ -4,6 +4,8 @@ Status: proposed implementation plan; no protocol endpoints are implemented by t
 
 The detailed follow-on proposal for logout extensions and OP/app session activity is [Logout and session activity implementation plan](LOGOUT_IMPLEMENTATION_PLAN.md).
 
+The follow-on proposal for multiple response types and form-post delivery is [Authorization response modes implementation plan](AUTHORIZATION_RESPONSE_MODES_IMPLEMENTATION_PLAN.md).
+
 ## 1. Objective and delivery scope
 
 Turn this application into an OpenID Provider using the existing users, client registrations, form login, and transactional local storage. Expose protocol endpoints directly at the issuer root, including `/authorize` and `/token`. Preserve the existing management API groups and their role boundaries.
