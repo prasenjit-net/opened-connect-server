@@ -31,10 +31,10 @@ func (s *Service) currentPrincipal(r *http.Request) (identity.Principal, error) 
 	return s.Identity.Authenticate(r.Context(), identity.SessionHash(c.Value))
 }
 
-func clearSessionCookie(w http.ResponseWriter) {
+func clearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name: identity.SessionCookieName, Value: "", Path: "/", HttpOnly: true,
-		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0),
+		Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(1, 0),
 	})
 }
 
@@ -253,7 +253,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, &http.Cookie{
 		Name: authzBindingCookieName, Value: binding, Path: "/", HttpOnly: true,
-		Secure: true, SameSite: http.SameSiteLaxMode,
+		Secure: s.Config.CookieSecure, SameSite: http.SameSiteLaxMode,
 		MaxAge: int(s.Config.TransactionTTL.Seconds()),
 	})
 
@@ -267,7 +267,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		// elsewhere (e.g. another tab) — prompt=login only asks this
 		// browser to re-assert identity for this specific request. The stored
 		// ReauthenticateAfter boundary is enforced during continuation.
-		clearSessionCookie(w)
+		clearSessionCookie(w, s.Config.CookieSecure)
 		http.Redirect(w, r, "/login?redirect="+url.QueryEscape(continuation), http.StatusFound)
 		return
 	}
