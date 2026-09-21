@@ -1,0 +1,81 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>example-rp{{with .Title}} - {{.}}{{end}}</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #2563eb; --border: #d0d7de; --bg-soft: #f6f8fa; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 960px; margin: 0 auto; padding: 1.5rem; line-height: 1.5; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: .5rem; }
+    header h1 { font-size: 1.1rem; margin: 0; }
+    header h1 a { text-decoration: none; color: inherit; }
+    nav a { margin-left: 1rem; text-decoration: none; color: var(--accent); font-size: .9rem; }
+    nav a:first-child { margin-left: 0; }
+    section { border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    section > h2 { margin-top: 0; font-size: 1rem; }
+    section > h3 { font-size: .9rem; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { background: var(--bg-soft); padding: .75rem; border-radius: 6px; overflow-x: auto; font-size: .8rem; white-space: pre-wrap; word-break: break-all; }
+    table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+    td, th { border-bottom: 1px solid var(--border); padding: .4rem .5rem; text-align: left; vertical-align: top; }
+    label { display: block; font-size: .85rem; font-weight: 600; margin-top: .75rem; }
+    input, select { width: 100%; padding: .4rem .5rem; margin-top: .25rem; border: 1px solid var(--border); border-radius: 6px; font-size: .9rem; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 220px; }
+    .btn { display: inline-block; background: var(--accent); color: #fff; border: none; padding: .5rem 1rem; border-radius: 6px; text-decoration: none; font-size: .9rem; cursor: pointer; margin: .25rem .5rem .25rem 0; }
+    .btn.secondary { background: #6b7280; }
+    .btn.danger { background: #dc2626; }
+    .muted { color: #6b7280; font-size: .85rem; }
+    .pill { display: inline-block; padding: .1rem .5rem; border-radius: 999px; background: var(--bg-soft); font-size: .75rem; font-family: monospace; }
+    .flow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .flow-card { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .flow-card h3 { margin-top: 0; }
+    .error-box { background: #fee2e2; border: 1px solid #dc2626; border-radius: 6px; padding: .75rem 1rem; color: #991b1b; }
+    .ok-box { background: #dcfce7; border: 1px solid #16a34a; border-radius: 6px; padding: .75rem 1rem; color: #14532d; }
+    details summary { cursor: pointer; font-weight: 600; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><a href="/">example-rp</a> <span class="muted">test OIDC client</span></h1>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/config">Config</a>
+      <a href="/inspector">Inspector</a>
+    </nav>
+  </header>
+  {{template "content" .}}
+</body>
+</html>
+{{end}}
+
+{{define "client_picker"}}
+{{if .Clients}}
+<div class="flow-card" style="margin-bottom:1rem;background:var(--bg-soft)">
+  <label style="margin-top:0">Use a saved client</label>
+  <select id="client-picker" onchange="applySavedClient(this)">
+    <option value="">- pick one -</option>
+    {{range .Clients}}
+    <option value="{{.ClientID}}" data-secret="{{.ClientSecret}}" data-auth-method="{{.AuthMethod}}">{{.Label}} ({{.ClientID}})</option>
+    {{end}}
+  </select>
+  <p class="muted" style="margin-bottom:0">Fills the fields below. <a href="/config">Manage saved clients</a></p>
+</div>
+<script>
+function applySavedClient(sel) {
+  const opt = sel.selectedOptions[0];
+  if (!opt || !opt.value) return;
+  const form = sel.closest("section").querySelector("form");
+  if (!form) return;
+  if (form.client_id) form.client_id.value = opt.value;
+  if (form.client_secret) form.client_secret.value = opt.dataset.secret || "";
+  if (form.auth_method) form.auth_method.value = opt.dataset.authMethod || "client_secret_basic";
+}
+</script>
+{{else}}
+<p class="muted">No saved clients yet. <a href="/register">Register one dynamically</a> or <a href="/config">add one by hand</a>.</p>
+{{end}}
+{{end}}

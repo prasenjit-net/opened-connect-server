@@ -1,0 +1,78 @@
+{{define "content"}}
+<section>
+  <h2>Connected OP</h2>
+  <table>
+    <tr><td>Issuer</td><td><code>{{.Config.Issuer}}</code></td></tr>
+    <tr><td>This app's redirect_uri</td><td><code>{{.Config.RedirectURI}}</code></td></tr>
+    <tr><td>This app's post_logout_redirect_uri</td><td><code>{{.Config.PostLogoutRedirectURI}}</code></td></tr>
+    <tr><td>This app's frontchannel_logout_uri</td><td><code>{{.Config.FrontChannelLogoutURI}}</code></td></tr>
+    <tr><td>This app's backchannel_logout_uri</td><td><code>{{.Config.BackChannelLogoutURI}}</code></td></tr>
+  </table>
+  {{if .DiscoveryError}}<div class="error-box" style="margin-top:.75rem">Could not reach discovery document: {{.DiscoveryError}}</div>{{end}}
+</section>
+
+<section>
+  <h2>Saved clients ({{len .Clients}})</h2>
+  <p class="muted">Clients registered via <a href="/register">dynamic registration</a> or added here by hand. Every flow form can pick one of these instead of retyping credentials.</p>
+  {{if .Clients}}
+  {{range .Clients}}
+  <div class="flow-card" style="margin-bottom:1rem">
+    <div class="row" style="align-items:baseline">
+      <div>
+        <strong>{{.Label}}</strong> <span class="pill">{{.Source}}</span>
+        <div class="muted" style="margin-top:.25rem">{{.Created.Format "2006-01-02 15:04:05"}}</div>
+      </div>
+    </div>
+    <table style="margin-top:.5rem">
+      <tr><td>client_id</td><td><code>{{.ClientID}}</code></td></tr>
+      <tr><td>client_secret</td><td><code>{{if .ClientSecret}}{{.ClientSecret}}{{else}}<span class="muted">(none - public client)</span>{{end}}</code></td></tr>
+      <tr><td>auth method</td><td>{{.AuthMethod}}</td></tr>
+      {{if .RegistrationClientURI}}<tr><td>registration_client_uri</td><td><code style="word-break:break-all">{{.RegistrationClientURI}}</code></td></tr>{{end}}
+    </table>
+    <p style="margin-top:.5rem">
+      {{if .RegistrationAccessToken}}
+      <form style="display:inline" method="post" action="/config/clients/{{.ClientID}}/refresh"><button class="btn secondary" type="submit">Refresh from OP</button></form>
+      {{end}}
+      <form style="display:inline" method="post" action="/config/clients/{{.ClientID}}/delete" onsubmit="return confirm('Remove this saved client from example-rp? This does not delete it from the OP.')"><button class="btn danger" type="submit">Remove</button></form>
+    </p>
+    {{with .MetadataJSON}}<details><summary>Raw metadata (last fetched)</summary><pre>{{.}}</pre></details>{{end}}
+  </div>
+  {{end}}
+  {{else}}<p class="muted">None yet.</p>{{end}}
+</section>
+
+<section>
+  <h2>Add a client by hand</h2>
+  <p class="muted">For a client created another way, e.g. through the OP's admin API. It won't have a registration access token, so it can't be refreshed from here later.</p>
+  <form method="post" action="/config/clients">
+    <div class="row">
+      <div><label>Label</label><input name="label" placeholder="e.g. admin-created test client"></div>
+      <div>
+        <label>Auth method</label>
+        <select name="auth_method">
+          <option value="client_secret_basic">client_secret_basic</option>
+          <option value="client_secret_post">client_secret_post</option>
+          <option value="none">none (public client)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Client ID</label><input name="client_id" required></div>
+      <div><label>Client secret (blank for public/none)</label><input name="client_secret" type="password"></div>
+    </div>
+    <p><button class="btn" type="submit">Save client</button></p>
+  </form>
+</section>
+
+{{if .Caps}}
+<section>
+  <h2>Live OP capabilities</h2>
+  <table>
+    <tr><td>grant_types_supported</td><td>{{range .Discovery.GrantTypesSupported}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><td>token_endpoint_auth_methods_supported</td><td>{{range .Discovery.TokenEndpointAuthMethodsSupported}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><td>scopes_supported</td><td>{{range .Discovery.ScopesSupported}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><td>registration_endpoint</td><td>{{if .Discovery.RegistrationEndpoint}}{{.Discovery.RegistrationEndpoint}}{{else}}<span class="muted">not offered</span>{{end}}</td></tr>
+  </table>
+</section>
+{{end}}
+{{end}}

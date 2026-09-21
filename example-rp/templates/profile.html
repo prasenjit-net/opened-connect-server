@@ -1,0 +1,43 @@
+{{define "content"}}
+<section>
+  <h2>Session</h2>
+  <table>
+    <tr><td>Subject</td><td><code>{{.Session.Subject}}</code></td></tr>
+    <tr><td>Flow</td><td><span class="pill">{{.Session.Flow}}</span></td></tr>
+    <tr><td>Client ID</td><td><code>{{.Session.ClientID}}</code></td></tr>
+    <tr><td>Auth method</td><td>{{.Session.AuthMethod}}</td></tr>
+    <tr><td>sid</td><td><code>{{.Session.SID}}</code></td></tr>
+    <tr><td>Access token expires</td><td>{{.Session.ExpiresAt.Format "15:04:05"}}</td></tr>
+    <tr><td>Has refresh token</td><td>{{if .Session.RefreshToken}}yes{{else}}no{{end}}</td></tr>
+  </table>
+  <p>
+    <form style="display:inline" method="post" action="/userinfo/refresh"><button class="btn" type="submit">Call /userinfo</button></form>
+    <form style="display:inline" method="post" action="/introspect"><button class="btn secondary" type="submit">Introspect access token</button></form>
+    <form style="display:inline" method="post" action="/revoke"><button class="btn danger" type="submit">Revoke access token</button></form>
+    {{if .Session.RefreshToken}}<form style="display:inline" method="post" action="/refresh"><button class="btn secondary" type="submit">Refresh</button></form>{{end}}
+  </p>
+  <p>
+    <a class="btn secondary" href="/logout/rp-initiated">Provider logout (RP-initiated)</a>
+    <form style="display:inline" method="post" action="/logout/local"><button class="btn secondary" type="submit">Local logout only</button></form>
+  </p>
+</section>
+
+<section>
+  <h2>ID token claims (verified)</h2>
+  {{if .Session.Claims}}<pre>{{.ClaimsJSON}}</pre>{{else}}<p class="muted">No ID token for this flow.</p>{{end}}
+</section>
+
+<section>
+  <h2>UserInfo response</h2>
+  {{if .Session.UserInfo}}<pre>{{.UserInfoJSON}}</pre>{{else}}<p class="muted">Not fetched yet - click "Call /userinfo" above.</p>{{end}}
+</section>
+
+<section>
+  <h2>Raw tokens</h2>
+  <details><summary>access_token</summary><pre>{{.Session.AccessToken}}</pre></details>
+  {{if .Session.IDToken}}<details><summary>id_token</summary><pre>{{.Session.IDToken}}</pre></details>{{end}}
+  {{if .Session.RefreshToken}}<details><summary>refresh_token</summary><pre>{{.Session.RefreshToken}}</pre></details>{{end}}
+</section>
+
+<p><a href="/inspector">Open protocol inspector</a></p>
+{{end}}

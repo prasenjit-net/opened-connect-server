@@ -1,0 +1,42 @@
+{{define "content"}}
+<section>
+  <h2>Active local sessions ({{len .Sessions}})</h2>
+  {{if .Sessions}}
+  <table>
+    <tr><th>Subject</th><th>Flow</th><th>Client</th><th>sid</th><th>Expires</th></tr>
+    {{range .Sessions}}
+    <tr><td>{{.Subject}}</td><td>{{.Flow}}</td><td>{{.ClientID}}</td><td><code>{{.SID}}</code></td><td>{{.ExpiresAt.Format "15:04:05"}}</td></tr>
+    {{end}}
+  </table>
+  {{else}}<p class="muted">No local sessions.</p>{{end}}
+</section>
+
+<section>
+  <h2>Protocol log <span class="muted" style="font-weight:normal">(newest first, auto-refreshing)</span></h2>
+  <form method="post" action="/inspector/clear" style="margin-bottom:.75rem"><button class="btn secondary" type="submit">Clear log</button></form>
+  <div id="log"></div>
+</section>
+
+<script>
+function esc(s) { const d = document.createElement('div'); d.innerText = s; return d.innerHTML; }
+function render(events) {
+  const log = document.getElementById('log');
+  if (!events.length) { log.innerHTML = '<p class="muted">No events yet - start a flow from the home page.</p>'; return; }
+  log.innerHTML = events.map(e => {
+    const time = new Date(e.time).toLocaleTimeString();
+    let body = '';
+    if (e.raw) body += '<pre>' + esc(e.raw) + '</pre>';
+    else if (e.data) body += '<pre>' + esc(JSON.stringify(e.data, null, 2)) + '</pre>';
+    return '<details style="margin-bottom:.5rem"><summary>' + esc(time) + ' &middot; <span class="pill">' + esc(e.kind) + '</span> ' + esc(e.detail) + '</summary>' + body + '</details>';
+  }).join('');
+}
+async function poll() {
+  try {
+    const res = await fetch('/inspector/events');
+    render(await res.json());
+  } catch (e) { /* transient fetch error, ignore */ }
+}
+poll();
+setInterval(poll, 2000);
+</script>
+{{end}}

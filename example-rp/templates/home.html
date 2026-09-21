@@ -1,0 +1,73 @@
+{{define "content"}}
+<section>
+  <h2>Connected OP</h2>
+  <table>
+    <tr><td>Issuer</td><td><code>{{.Config.Issuer}}</code></td></tr>
+    <tr><td>Saved clients</td><td>{{.ClientCount}} - <a href="/config">manage on the config page</a></td></tr>
+  </table>
+  {{if .DiscoveryError}}<div class="error-box" style="margin-top:.75rem">Could not reach discovery document: {{.DiscoveryError}}</div>{{end}}
+</section>
+
+{{if .LoggedIn}}
+<section class="ok-box">
+  Signed in as <code>{{.Session.Subject}}</code> via <span class="pill">{{.Session.Flow}}</span>.
+  <a href="/profile">View profile</a> &middot;
+  <a href="/logout/rp-initiated">Provider logout</a> &middot;
+  <form style="display:inline" method="post" action="/logout/local"><button type="submit" style="padding:0;background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:inherit">local logout only</button></form>
+</section>
+{{end}}
+
+<div class="flow-grid">
+  <div class="flow-card">
+    <h3>1. Get a client</h3>
+    <p class="muted">No client yet? Register one dynamically against the OP.</p>
+    {{if .Caps.DynamicRegistration}}<a class="btn" href="/register">Dynamic registration</a>{{else}}<span class="muted">Not advertised by this OP; register a client via its admin API instead.</span>{{end}}
+  </div>
+
+  <div class="flow-card">
+    <h3>Authorization Code + PKCE</h3>
+    <p class="muted">Standard browser login via the OP's own login/consent UI.</p>
+    {{if .Caps.AuthCode}}<a class="btn" href="/start/authcode">Configure &amp; start</a>{{else}}<span class="muted">Not advertised by this OP.</span>{{end}}
+  </div>
+
+  <div class="flow-card">
+    <h3>Resource Owner Password</h3>
+    <p class="muted">Exchanges a username/password directly for a token. Legacy, discouraged.</p>
+    {{if .Caps.Password}}<a class="btn" href="/start/password">Configure &amp; start</a>{{else}}<span class="muted">Not advertised by this OP (may be disabled).</span>{{end}}
+  </div>
+
+  <div class="flow-card">
+    <h3>Client Credentials</h3>
+    <p class="muted">Machine-to-machine; no user involved.</p>
+    {{if .Caps.ClientCredentials}}<a class="btn" href="/start/client-credentials">Configure &amp; start</a>{{else}}<span class="muted">Not advertised by this OP.</span>{{end}}
+  </div>
+
+  <div class="flow-card">
+    <h3>Refresh Token</h3>
+    <p class="muted">Uses the refresh token from the active session (requires offline_access at login).</p>
+    {{if .Caps.RefreshToken}}
+      {{if and .LoggedIn .Session.RefreshToken}}<form method="post" action="/refresh"><button class="btn" type="submit">Refresh now</button></form>{{else}}<span class="muted">Log in with offline_access first.</span>{{end}}
+    {{else}}<span class="muted">Not advertised by this OP.</span>{{end}}
+  </div>
+</div>
+
+<section>
+  <h2>OP capabilities (from live discovery)</h2>
+  <table>
+    <tr><td>authorization_code</td><td>{{.Caps.AuthCode}}</td></tr>
+    <tr><td>password</td><td>{{.Caps.Password}}</td></tr>
+    <tr><td>client_credentials</td><td>{{.Caps.ClientCredentials}}</td></tr>
+    <tr><td>refresh_token</td><td>{{.Caps.RefreshToken}}</td></tr>
+    <tr><td>offline_access scope</td><td>{{.Caps.OfflineAccessScope}}</td></tr>
+    <tr><td>PKCE S256</td><td>{{.Caps.PKCES256}}</td></tr>
+    <tr><td>dynamic registration</td><td>{{.Caps.DynamicRegistration}}</td></tr>
+    <tr><td>end_session (RP logout)</td><td>{{.Caps.EndSession}}</td></tr>
+    <tr><td>frontchannel_logout</td><td>{{.Caps.FrontChannelLogout}}</td></tr>
+    <tr><td>backchannel_logout</td><td>{{.Caps.BackChannelLogout}}</td></tr>
+    <tr><td>introspection</td><td>{{.Caps.Introspection}}</td></tr>
+    <tr><td>revocation</td><td>{{.Caps.Revocation}}</td></tr>
+    <tr><td>token_endpoint_auth_methods</td><td>{{range .Caps.AuthMethods}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+    <tr><td>scopes_supported</td><td>{{range .Caps.Scopes}}<span class="pill">{{.}}</span> {{end}}</td></tr>
+  </table>
+</section>
+{{end}}
