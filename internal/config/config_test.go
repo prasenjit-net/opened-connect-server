@@ -215,3 +215,34 @@ func TestOAuthConfigurationValidation(t *testing.T) {
 		t.Fatal("incorrect defaults or decoding")
 	}
 }
+
+func TestStorageBackendConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(*viper.Viper)
+		ok   bool
+	}{
+		{"json default", func(v *viper.Viper) {}, true},
+		{"unknown", func(v *viper.Viper) { v.Set("storage.backend", "sqlite") }, false},
+		{"postgres missing dsn", func(v *viper.Viper) { v.Set("storage.backend", "postgres") }, false},
+		{"postgres valid", func(v *viper.Viper) {
+			v.Set("storage.backend", "postgres")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+		}, true},
+		{"mongo missing uri", func(v *viper.Viper) { v.Set("storage.backend", "mongodb") }, false},
+		{"mongo valid", func(v *viper.Viper) {
+			v.Set("storage.backend", "mongodb")
+			v.Set("storage.mongodb.uri", "mongodb://user:secret@db.example/?replicaSet=rs0")
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := viper.New()
+			SetDefaults(v)
+			tc.set(v)
+			_, err := Load(v)
+			if (err == nil) != tc.ok {
+				t.Fatalf("Load error=%v, expected success=%t", err, tc.ok)
+			}
+		})
+	}
+}

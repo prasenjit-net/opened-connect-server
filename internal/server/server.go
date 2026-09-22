@@ -43,7 +43,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 	store := options.Store
 	if store == nil {
 		var err error
-		store, err = identity.NewFileStore(cfg.Storage.DataDir)
+		store, err = identity.OpenStore(context.Background(), identity.StoreOptions{Backend: cfg.Storage.Backend, DataDir: cfg.Storage.DataDir, PostgresDSN: cfg.Storage.Postgres.DSN, PostgresMaxOpen: cfg.Storage.Postgres.MaxOpenConns, PostgresMaxIdle: cfg.Storage.Postgres.MaxIdleConns, MongoURI: cfg.Storage.MongoDB.URI, MongoDatabase: cfg.Storage.MongoDB.Database})
 		if err != nil {
 			return nil, err
 		}
