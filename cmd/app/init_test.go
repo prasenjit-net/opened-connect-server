@@ -196,3 +196,32 @@ func TestInitForceNeverReplacesValidSigningKey(t *testing.T) {
 		t.Fatalf("init --force replaced a valid signing key: %s vs %s", first.ActiveKID, second.ActiveKID)
 	}
 }
+
+func TestInitProjectOptionsRequireScopedAudience(t *testing.T) {
+	oldRegistration, oldRefresh, oldPassword, oldAudience, oldScopes := initRegistrationEnabled, initRefreshTokensEnabled, initPasswordGrantEnabled, initAudience, initAudienceScopes
+	t.Cleanup(func() {
+		initRegistrationEnabled, initRefreshTokensEnabled, initPasswordGrantEnabled, initAudience, initAudienceScopes = oldRegistration, oldRefresh, oldPassword, oldAudience, oldScopes
+	})
+	command := &cobra.Command{}
+	command.Flags().BoolVar(&initRegistrationEnabled, "registration-enabled", false, "")
+	command.Flags().BoolVar(&initRefreshTokensEnabled, "refresh-tokens-enabled", false, "")
+	command.Flags().BoolVar(&initPasswordGrantEnabled, "password-grant-enabled", false, "")
+	command.Flags().StringVar(&initAudience, "audience", "", "")
+	command.Flags().StringSliceVar(&initAudienceScopes, "audience-scope", nil, "")
+	if err := command.Flags().Parse([]string{"--audience", "https://api.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initProjectOptions(command); err == nil {
+		t.Fatal("audience without scopes was accepted")
+	}
+	if err := command.Flags().Set("audience-scope", "read,write"); err != nil {
+		t.Fatal(err)
+	}
+	options, err := initProjectOptions(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !options.EnablesOIDC() || len(options.Resources) != 1 || len(options.Resources[0].Scopes) != 2 {
+		t.Fatalf("unexpected init options: %+v", options)
+	}
+}

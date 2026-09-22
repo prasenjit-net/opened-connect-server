@@ -1,9 +1,11 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/prasenjit-net/opened-connect-server/internal/identity"
 	"github.com/spf13/viper"
 )
 
@@ -26,6 +28,32 @@ func TestLoadFromViper(t *testing.T) {
 	}
 	if cfg.Server.ReadTimeout != 30*time.Second {
 		t.Fatalf("expected duration decode, got %s", cfg.Server.ReadTimeout)
+	}
+}
+
+func TestInitProjectWritesSelectedProtocolOptions(t *testing.T) {
+	dir := t.TempDir()
+	registration, refresh := true, true
+	options := InitProjectOptions{
+		RegistrationEnabled:  &registration,
+		RefreshTokensEnabled: &refresh,
+		Resources:            []identity.Resource{{Audience: "https://api.example.com", Enabled: true, Scopes: []string{"items:read", "items:write"}}},
+	}
+	if err := InitProjectWithOptions(dir, false, options); err != nil {
+		t.Fatal(err)
+	}
+	v := viper.New()
+	SetDefaults(v)
+	v.SetConfigFile(filepath.Join(dir, "config.yaml"))
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.OIDC.Enabled || !cfg.OIDC.RegistrationEnabled || !cfg.OAuth.RefreshTokensEnabled || len(cfg.OAuth.Resources) != 1 || cfg.OAuth.Resources[0].Audience != "https://api.example.com" {
+		t.Fatalf("selected init options were not persisted: %+v", cfg)
 	}
 }
 
