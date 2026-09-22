@@ -48,25 +48,32 @@ func (s *MongoStore) withState(ctx context.Context, write bool, fn func(*fileSta
 		return err
 	}
 	defer session.EndSession(ctx)
-	_, err = session.WithTransaction(ctx, func(ctx context.Context) (any, error) {
+	if err = session.StartTransaction(); err != nil {
+		return err
+	}
+	err = mongo.WithSession(ctx, session, func(ctx context.Context) error {
 		var record mongoState
 		err := s.collection.FindOne(ctx, bson.D{{Key: "_id", Value: "state"}}).Decode(&record)
 		if err == mongo.ErrNoDocuments {
 			record.ID = "state"
 		} else if err != nil {
-			return nil, err
+			return err
 		}
 		next, err := executeSerializedState(ctx, record.State, write, s.secrets, fn)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if write {
 			_, err = s.collection.ReplaceOne(ctx, bson.D{{Key: "_id", Value: "state"}}, mongoState{ID: "state", State: next}, options.Replace().SetUpsert(true))
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
-		return nil, nil
+		return nil
 	})
-	return err
+	if err != nil {
+		_ = session.AbortTransaction(ctx)
+		return err
+	}
+	return session.CommitTransaction(ctx)
 }
