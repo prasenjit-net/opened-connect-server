@@ -43,11 +43,13 @@ var scopeDescriptions = map[string]string{
 // next, including on denial or error — the relying party always gets a
 // callback), it needs a consent decision, or it has failed outright.
 type TransactionView struct {
-	Status     string      `json:"status"` // "complete", "consent_required", or "error"
-	RedirectTo string      `json:"redirectTo,omitempty"`
-	ClientName string      `json:"clientName,omitempty"`
-	Scopes     []ScopeInfo `json:"scopes,omitempty"`
-	Message    string      `json:"message,omitempty"`
+	Status       string      `json:"status"` // "complete", "consent_required", or "error"
+	RedirectTo   string      `json:"redirectTo,omitempty"`
+	ResponseMode string      `json:"responseMode,omitempty"`
+	FormAction   string      `json:"formAction,omitempty"`
+	ClientName   string      `json:"clientName,omitempty"`
+	Scopes       []ScopeInfo `json:"scopes,omitempty"`
+	Message      string      `json:"message,omitempty"`
 }
 
 func errorView() TransactionView {
@@ -166,7 +168,7 @@ func (s *Service) completeInteraction(r *http.Request, principal identity.Princi
 		}
 		txn.Consumed = true
 		tx.SaveAuthzTransaction(txn)
-		view = TransactionView{Status: "complete", RedirectTo: redirect}
+		view = TransactionView{Status: "complete", RedirectTo: redirect, ResponseMode: txn.ResponseMode, FormAction: txn.RedirectURI}
 		return nil
 	})
 	if err != nil {

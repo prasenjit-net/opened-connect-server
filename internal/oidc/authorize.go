@@ -94,8 +94,9 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		fail("request_uri_not_supported", "Request URIs are not supported.")
 		return
 	}
-	if mode := params.Get("response_mode"); mode != "" && mode != "query" {
-		fail("invalid_request", "Only query response mode is supported.")
+	responseMode := params.Get("response_mode")
+	if !validCodeResponseMode(responseMode) {
+		fail("invalid_request", "Only query and form_post response modes are supported.")
 		return
 	}
 	if params.Has("claims") || params.Has("acr_values") || params.Has("id_token_hint") {
@@ -197,9 +198,13 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 			nonce: params.Get("nonce"), codeChallenge: params.Get("code_challenge"), codeChallengeMethod: params.Get("code_challenge_method"),
 			userID: principal.User.ID, authTime: principal.Session.AuthTime, sessionHash: principal.Session.Hash, maxAge: maxAge, requireConsent: true,
 		})
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, redirectTo, http.StatusFound)
+		if responseMode == responseModeFormPost {
+			writeFormPost(w, redirectURI, redirectTo)
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			http.Redirect(w, r, redirectTo, http.StatusFound)
+		}
 		return
 	}
 
@@ -222,6 +227,7 @@ func (s *Service) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 		RedirectURI:         redirectURI,
 		Scopes:              scopes,
 		State:               state,
+		ResponseMode:        responseMode,
 		Nonce:               params.Get("nonce"),
 		CodeChallenge:       params.Get("code_challenge"),
 		CodeChallengeMethod: params.Get("code_challenge_method"),

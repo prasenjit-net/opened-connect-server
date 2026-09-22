@@ -69,7 +69,7 @@ func (s *Service) discoveryDocument() discoveryDocument {
 		UserinfoEndpoint:                  issuer + "/userinfo",
 		JWKSURI:                           issuer + "/jwks",
 		ResponseTypesSupported:            capability.SupportedResponseTypes,
-		ResponseModesSupported:            []string{"query"},
+		ResponseModesSupported:            []string{"query", "form_post"},
 		GrantTypesSupported:               s.supportedGrants(),
 		SubjectTypesSupported:             capability.SupportedSubjectTypes,
 		IDTokenSigningAlgValuesSupported:  capability.SupportedSigningAlgs,

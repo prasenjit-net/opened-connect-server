@@ -16,6 +16,7 @@ type AuthzTransaction struct {
 	RedirectURI         string    `json:"redirectUri"`
 	Scopes              []string  `json:"scopes"`
 	State               string    `json:"state"`
+	ResponseMode        string    `json:"responseMode,omitempty"`
 	Nonce               string    `json:"nonce"`
 	CodeChallenge       string    `json:"codeChallenge"`
 	CodeChallengeMethod string    `json:"codeChallengeMethod"`

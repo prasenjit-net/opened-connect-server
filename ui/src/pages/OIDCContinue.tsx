@@ -31,18 +31,21 @@ export default function OIDCContinuePage() {
     retry: false,
   });
 
-  useEffect(() => {
-    if (query.data?.status === "complete" && query.data.redirectTo) {
-      navigateExternal(query.data.redirectTo);
-    }
-  }, [query.data]);
+  const complete = (result: { redirectTo?: string; responseMode?: string; formAction?: string }) => {
+    if (!result.redirectTo) return;
+    if (result.responseMode !== "form_post" || !result.formAction) { navigateExternal(result.redirectTo); return; }
+    const values = new URL(result.redirectTo).searchParams; const form = document.createElement("form"); form.method = "post"; form.action = result.formAction;
+    values.forEach((value, name) => { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input); });
+    document.body.append(form); form.submit();
+  };
+  useEffect(() => { if (query.data?.status === "complete") complete(query.data); }, [query.data]);
 
   const decide = async (approve: boolean) => {
     if (busy || !query.data?.scopes) return;
     setBusy(true); setError("");
     try {
       const result = await api.decideAuthorization(search.tx, { approve, scopes: query.data.scopes.map((s) => s.scope) });
-      if (result.redirectTo) navigateExternal(result.redirectTo);
+      if (result.redirectTo) complete(result);
       else setError(result.message || "Unable to complete this sign-in request.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to complete this sign-in request.");
