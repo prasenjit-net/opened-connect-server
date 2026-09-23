@@ -234,6 +234,20 @@ func TestStorageBackendConfiguration(t *testing.T) {
 			v.Set("storage.backend", "mongodb")
 			v.Set("storage.mongodb.uri", "mongodb://user:secret@db.example/?replicaSet=rs0")
 		}, true},
+		{"postgres sslmode disable outside development", func(v *viper.Viper) {
+			v.Set("storage.backend", "postgres")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+			v.Set("storage.postgres.sslMode", "disable")
+			v.Set("app.env", "production")
+			v.Set("app.url", "https://issuer.example")
+		}, false},
+		{"postgres sslmode verify-full outside development", func(v *viper.Viper) {
+			v.Set("storage.backend", "postgres")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+			v.Set("storage.postgres.sslMode", "verify-full")
+			v.Set("app.env", "production")
+			v.Set("app.url", "https://issuer.example")
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			v := viper.New()

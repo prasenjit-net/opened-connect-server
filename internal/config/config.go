@@ -39,11 +39,15 @@ type StorageConfig struct {
 	MongoDB  MongoDBConfig  `mapstructure:"mongodb" yaml:"mongodb"`
 }
 type PostgresConfig struct {
-	DSN             string        `mapstructure:"dsn" yaml:"dsn"`
-	MaxOpenConns    int           `mapstructure:"maxOpenConns" yaml:"maxOpenConns"`
-	MaxIdleConns    int           `mapstructure:"maxIdleConns" yaml:"maxIdleConns"`
-	ConnMaxLifetime time.Duration `mapstructure:"connMaxLifetime" yaml:"connMaxLifetime"`
-	ConnectTimeout  time.Duration `mapstructure:"connectTimeout" yaml:"connectTimeout"`
+	DSN              string        `mapstructure:"dsn" yaml:"dsn"`
+	MaxOpenConns     int           `mapstructure:"maxOpenConns" yaml:"maxOpenConns"`
+	MaxIdleConns     int           `mapstructure:"maxIdleConns" yaml:"maxIdleConns"`
+	ConnMaxLifetime  time.Duration `mapstructure:"connMaxLifetime" yaml:"connMaxLifetime"`
+	ConnectTimeout   time.Duration `mapstructure:"connectTimeout" yaml:"connectTimeout"`
+	StatementTimeout time.Duration `mapstructure:"statementTimeout" yaml:"statementTimeout"`
+	// SSLMode is passed through to the DSN's sslmode parameter when set,
+	// and is required to be a non-disabling mode outside development/test.
+	SSLMode string `mapstructure:"sslMode" yaml:"sslMode"`
 }
 type MongoDBConfig struct {
 	URI                    string        `mapstructure:"uri" yaml:"uri"`
@@ -103,7 +107,7 @@ type OIDCConfig struct {
 
 func Default() Config {
 	return Config{
-		Storage: StorageConfig{Backend: "json", DataDir: "data", Postgres: PostgresConfig{MaxOpenConns: 20, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute, ConnectTimeout: 5 * time.Second}, MongoDB: MongoDBConfig{Database: "opened_connect_server", ConnectTimeout: 5 * time.Second, ServerSelectionTimeout: 5 * time.Second}},
+		Storage: StorageConfig{Backend: "json", DataDir: "data", Postgres: PostgresConfig{MaxOpenConns: 20, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute, ConnectTimeout: 5 * time.Second, StatementTimeout: 10 * time.Second, SSLMode: "verify-full"}, MongoDB: MongoDBConfig{Database: "opened_connect_server", ConnectTimeout: 5 * time.Second, ServerSelectionTimeout: 5 * time.Second}},
 		Auth:    AuthConfig{SessionTTL: 8 * time.Hour},
 		App: AppConfig{
 			Name:        "OpenID Connect Server",
@@ -161,6 +165,8 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("storage.postgres.maxIdleConns", defaults.Storage.Postgres.MaxIdleConns)
 	v.SetDefault("storage.postgres.connMaxLifetime", defaults.Storage.Postgres.ConnMaxLifetime)
 	v.SetDefault("storage.postgres.connectTimeout", defaults.Storage.Postgres.ConnectTimeout)
+	v.SetDefault("storage.postgres.statementTimeout", defaults.Storage.Postgres.StatementTimeout)
+	v.SetDefault("storage.postgres.sslMode", defaults.Storage.Postgres.SSLMode)
 	v.SetDefault("storage.mongodb.database", defaults.Storage.MongoDB.Database)
 	v.SetDefault("storage.mongodb.connectTimeout", defaults.Storage.MongoDB.ConnectTimeout)
 	v.SetDefault("storage.mongodb.serverSelectionTimeout", defaults.Storage.MongoDB.ServerSelectionTimeout)
@@ -212,8 +218,15 @@ func Load(v *viper.Viper) (Config, error) {
 	switch cfg.Storage.Backend {
 	case "json":
 	case "postgres":
-		if strings.TrimSpace(cfg.Storage.Postgres.DSN) == "" || cfg.Storage.Postgres.MaxOpenConns < 1 || cfg.Storage.Postgres.MaxIdleConns < 0 || cfg.Storage.Postgres.MaxIdleConns > cfg.Storage.Postgres.MaxOpenConns || cfg.Storage.Postgres.ConnMaxLifetime <= 0 || cfg.Storage.Postgres.ConnectTimeout <= 0 {
+		if strings.TrimSpace(cfg.Storage.Postgres.DSN) == "" || cfg.Storage.Postgres.MaxOpenConns < 1 || cfg.Storage.Postgres.MaxIdleConns < 0 || cfg.Storage.Postgres.MaxIdleConns > cfg.Storage.Postgres.MaxOpenConns || cfg.Storage.Postgres.ConnMaxLifetime <= 0 || cfg.Storage.Postgres.ConnectTimeout <= 0 || cfg.Storage.Postgres.StatementTimeout <= 0 {
 			return Config{}, fmt.Errorf("storage.postgres requires dsn, valid pool limits, and positive timeouts")
+		}
+		if cfg.App.Env != "development" && cfg.App.Env != "test" {
+			switch cfg.Storage.Postgres.SSLMode {
+			case "require", "verify-ca", "verify-full":
+			default:
+				return Config{}, fmt.Errorf("storage.postgres.sslMode must be require, verify-ca, or verify-full outside development")
+			}
 		}
 	case "mongodb":
 		if strings.TrimSpace(cfg.Storage.MongoDB.URI) == "" || strings.TrimSpace(cfg.Storage.MongoDB.Database) == "" || cfg.Storage.MongoDB.ConnectTimeout <= 0 || cfg.Storage.MongoDB.ServerSelectionTimeout <= 0 {

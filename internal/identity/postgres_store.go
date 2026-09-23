@@ -2,68 +2,163 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type PostgresStore struct {
-	pool    *pgxpool.Pool
-	secrets *FileStore
+// PostgresStoreConfig collects everything NewPostgresStore needs. Kept as
+// its own type (rather than reusing config.PostgresConfig directly) so
+// internal/identity has no import-time dependency on internal/config.
+type PostgresStoreConfig struct {
+	DSN              string
+	DataDir          string
+	MaxOpenConns     int
+	MaxIdleConns     int
+	ConnMaxLifetime  time.Duration
+	ConnectTimeout   time.Duration
+	StatementTimeout time.Duration
 }
 
-func NewPostgresStore(ctx context.Context, dsn, dataDir string, maxOpen, maxIdle int) (*PostgresStore, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
+type PostgresStore struct {
+	pool             *pgxpool.Pool
+	secrets          *FileStore
+	statementTimeout time.Duration
+}
+
+// serializationFailure / deadlockDetected are the two SQLSTATE codes worth
+// retrying a whole Write callback for: both mean no work was lost, the
+// transaction simply lost a race and must be replayed from scratch.
+const (
+	sqlStateSerializationFailure = "40001"
+	sqlStateDeadlockDetected     = "40P01"
+)
+
+const maxWriteRetries = 3
+
+func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresStore, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("parse PostgreSQL DSN: %w", err)
 	}
-	cfg.MaxConns = int32(maxOpen)
-	cfg.MinConns = int32(maxIdle)
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
+	poolCfg.MinConns = int32(cfg.MaxIdleConns)
+	if cfg.ConnMaxLifetime > 0 {
+		poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
+	}
+
+	connectCtx := ctx
+	if cfg.ConnectTimeout > 0 {
+		var cancel context.CancelFunc
+		connectCtx, cancel = context.WithTimeout(ctx, cfg.ConnectTimeout)
+		defer cancel()
+	}
+
+	pool, err := pgxpool.NewWithConfig(connectCtx, poolCfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect PostgreSQL: %w", err)
+		return nil, fmt.Errorf("connect PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
 	}
-	if _, err = pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS opened_connect_state (id boolean PRIMARY KEY DEFAULT true CHECK (id), state jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	if err := pool.Ping(connectCtx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("initialize PostgreSQL store: %w", err)
+		return nil, fmt.Errorf("ping PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
 	}
-	secrets, err := databaseSecretStore(dataDir, "postgres")
+
+	if err := runPostgresMigrations(cfg.DSN); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("migrate PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
+	}
+
+	secrets, err := databaseSecretStore(cfg.DataDir, "postgres")
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
-	return &PostgresStore{pool: pool, secrets: secrets}, nil
+
+	statementTimeout := cfg.StatementTimeout
+	if statementTimeout <= 0 {
+		statementTimeout = 10 * time.Second
+	}
+
+	return &PostgresStore{pool: pool, secrets: secrets, statementTimeout: statementTimeout}, nil
 }
+
 func (s *PostgresStore) Close() { s.pool.Close() }
+
 func (s *PostgresStore) Read(ctx context.Context, fn func(ReadTx) error) error {
-	return s.withState(ctx, false, func(tx *fileState) error { return fn(tx) })
+	return s.runOnce(ctx, pgx.ReadOnly, func(tx *postgresTx) error { return fn(tx) })
 }
+
+// Write retries the entire callback on Postgres serialization/deadlock
+// failures, since those mean the transaction committed nothing and
+// re-running it from scratch (with fresh reads) is safe and correct. Any
+// other error - including one returned deliberately by a Tx mutator that
+// failed, per postgresTx's error-poisoning below - is not retried.
 func (s *PostgresStore) Write(ctx context.Context, fn func(Tx) error) error {
-	return s.withState(ctx, true, func(tx *fileState) error { return fn(tx) })
+	var lastErr error
+	for attempt := 0; attempt < maxWriteRetries; attempt++ {
+		err := s.runOnce(ctx, pgx.ReadWrite, func(tx *postgresTx) error { return fn(tx) })
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isRetryableSerializationError(err) {
+			return err
+		}
+		time.Sleep(retryBackoff(attempt))
+	}
+	return lastErr
 }
-func (s *PostgresStore) withState(ctx context.Context, write bool, fn func(*fileState) error) error {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+
+func retryBackoff(attempt int) time.Duration {
+	base := time.Duration(1<<attempt) * 5 * time.Millisecond
+	jitter := time.Duration(rand.Int63n(int64(base) + 1))
+	return base + jitter
+}
+
+func isRetryableSerializationError(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == sqlStateSerializationFailure || pgErr.Code == sqlStateDeadlockDetected
+}
+
+// runOnce executes fn inside exactly one SERIALIZABLE transaction. The
+// transaction commits if and only if fn returns nil, matching the Store
+// contract (store.go: "Write must roll back all changes when the callback
+// returns an error") and the "return nil to commit a replay revocation"
+// idiom the OIDC layer depends on for authorization-code and refresh-token
+// replay handling - since the whole revoke-then-return-nil sequence
+// happens inside this one fn call, it is either entirely committed or
+// (on any other error) entirely rolled back.
+func (s *PostgresStore) runOnce(ctx context.Context, mode pgx.TxAccessMode, fn func(*postgresTx) error) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable, AccessMode: mode})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var raw []byte
-	err = tx.QueryRow(ctx, `SELECT state FROM opened_connect_state WHERE id = true`+map[bool]string{true: " FOR UPDATE", false: ""}[write]).Scan(&raw)
-	if err == pgx.ErrNoRows {
-		raw = nil
-	} else if err != nil {
+
+	if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = %d", s.statementTimeout.Milliseconds())); err != nil {
 		return err
 	}
-	next, err := executeSerializedState(ctx, raw, write, s.secrets, fn)
-	if err != nil {
+
+	ptx := &postgresTx{ctx: ctx, tx: tx, secrets: s.secrets, now: time.Now}
+	if err := fn(ptx); err != nil {
 		return err
 	}
-	if write {
-		_, err = tx.Exec(ctx, `INSERT INTO opened_connect_state (id, state) VALUES (true, $1::jsonb) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`, string(next))
-		if err != nil {
-			return err
-		}
+	if ptx.err != nil {
+		return ptx.err
 	}
 	return tx.Commit(ctx)
 }

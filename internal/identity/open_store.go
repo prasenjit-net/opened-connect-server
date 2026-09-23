@@ -1,10 +1,17 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"time"
+)
 
 type StoreOptions struct {
 	Backend, DataDir, PostgresDSN, MongoURI, MongoDatabase string
 	PostgresMaxOpen, PostgresMaxIdle                       int
+	PostgresConnMaxLifetime                                time.Duration
+	PostgresConnectTimeout                                 time.Duration
+	PostgresStatementTimeout                               time.Duration
 }
 
 func OpenStore(ctx context.Context, o StoreOptions) (Store, error) {
@@ -12,10 +19,18 @@ func OpenStore(ctx context.Context, o StoreOptions) (Store, error) {
 	case "", "json":
 		return NewFileStore(o.DataDir)
 	case "postgres":
-		return NewPostgresStore(ctx, o.PostgresDSN, o.DataDir, o.PostgresMaxOpen, o.PostgresMaxIdle)
+		return NewPostgresStore(ctx, PostgresStoreConfig{
+			DSN:              o.PostgresDSN,
+			DataDir:          o.DataDir,
+			MaxOpenConns:     o.PostgresMaxOpen,
+			MaxIdleConns:     o.PostgresMaxIdle,
+			ConnMaxLifetime:  o.PostgresConnMaxLifetime,
+			ConnectTimeout:   o.PostgresConnectTimeout,
+			StatementTimeout: o.PostgresStatementTimeout,
+		})
 	case "mongodb":
 		return NewMongoStore(ctx, o.MongoURI, o.MongoDatabase, o.DataDir)
 	default:
-		return nil, ErrNotFound
+		return nil, fmt.Errorf("unknown storage backend %q", o.Backend)
 	}
 }
