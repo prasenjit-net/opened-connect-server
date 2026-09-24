@@ -10,7 +10,7 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 - `chi`-based API routing under `/api`
 - User/admin roles enforced in the API and UI
 - Argon2id passwords and expiring, revocable cookie sessions
-- Local identity storage behind a transactional interface
+- Identity storage behind a transactional interface, with JSON file, PostgreSQL, and MongoDB backends
 - An OpenID Connect provider (authorization code + PKCE, discovery, JWKS, UserInfo) alongside the management API
 - UI configuration at `/api/public/config` and a health check at `/api/public/health`
 - Embedded React build via Go `embed`
@@ -26,10 +26,12 @@ Repository: https://github.com/prasenjit-net/opened-connect-server
 │   └── workflows/
 ├── cmd/
 │   └── app/
+├── docs/                 # design/implementation plans and reviews
+├── example-rp/           # standalone OIDC relying-party test harness
 ├── internal/
 │   ├── api/
 │   ├── config/
-│   ├── identity/
+│   ├── identity/         # Store interface + FileStore/PostgresStore/MongoStore
 │   ├── logging/
 │   ├── oidc/
 │   ├── server/
@@ -140,7 +142,7 @@ Routes: `/login`, `/` (dashboard), `/users`, `/users/new`, `/users/$userId` (adm
 
 Set `ui.defaultTheme` to `auto`, `light`, or `dark` and `ui.repoURL` in `config.yaml`. `app.name` and `app.description` supply the visible branding. The server injects the default theme before the first paint; a saved browser preference takes priority.
 
-Unknown API routes return a JSON 404. The old `/api/example` and `/api/meta` endpoints have been removed. See `THIRD_PARTY_NOTICES.md` for theme attribution.
+Unknown API routes return a JSON 404. The old `/api/example` and `/api/meta` endpoints have been removed.
 
 ## Initial administrator
 
@@ -177,13 +179,54 @@ Initialization refuses to modify any existing user store, even with `--force`. T
 
 The API returns JSON errors with 401 for unauthenticated requests, 403 for unauthorized actions, and 409 for duplicate emails or removal of the last active admin.
 
-## Local storage and future database adapters
+## Storage backends
 
-`internal/identity.Store` defines atomic `Read` and `Write` transactions over `ReadTx`/`Tx`. The identity service depends only on that interface. A database implementation can provide database transactions and be injected through `server.Options.Store` without changing handlers or UI code.
+`internal/identity.Store` defines atomic `Read` and `Write` transactions over `ReadTx`/`Tx`. The identity service, API, and OIDC provider depend only on that interface, so the backend is selected purely through configuration and never touches handler or UI code. Set `storage.backend` to `json` (default), `postgres`, or `mongodb`.
 
-The default `FileStore` stores users, salted Argon2id password hashes, and sessions in `data/identity.json`. Writes use a synced temporary file and atomic rename; an OS file lock serializes transactions across server and CLI processes. Failed transactions leave the previous file intact. The directory is mode 0700 and the identity file is mode 0600 on POSIX systems. The schema is versioned, and malformed/unsupported data fails closed. The data directory is ignored by Git and is never served as static content.
+### JSON file store (default)
 
-Set `storage.dataDir` or pass `--data-dir /absolute/path`. Relative storage paths are resolved from the working directory (`--path` for `init`). Back up the directory as private application data. Login rate-limit counters are process-local and reset on restart; deployments with multiple replicas should add a shared rate limiter along with a database adapter.
+The default `FileStore` stores users, salted Argon2id password hashes, sessions, and all OIDC/OAuth protocol state in `data/identity.json`. Writes use a synced temporary file and atomic rename; an OS file lock serializes transactions across server and CLI processes. Failed transactions leave the previous file intact. The directory is mode 0700 and the identity file is mode 0600 on POSIX systems. The schema is versioned, and malformed/unsupported data fails closed. The data directory is ignored by Git and is never served as static content.
+
+Set `storage.dataDir` or pass `--data-dir /absolute/path`. Relative storage paths are resolved from the working directory (`--path` for `init`). Back up the directory as private application data. Login rate-limit counters are process-local and reset on restart; deployments with multiple replicas should use a shared database backend below along with a shared rate limiter.
+
+### PostgreSQL
+
+PostgreSQL stores the versioned identity state in an `opened_connect_state` JSONB row. It is created on first connection. Writes run in `SERIALIZABLE` transactions and lock that row before applying the same domain transition code as the JSON store. A serialization conflict returns an error to the caller; it does not replay a callback that may have generated a credential.
+
+```yaml
+storage:
+  backend: postgres
+  dataDir: data # still required: signing keys and the client-secret encryption key live here
+  postgres:
+    dsn: ${APP_STORAGE_POSTGRES_DSN}
+    maxOpenConns: 20
+    maxIdleConns: 5
+    connMaxLifetime: 30m
+    connectTimeout: 5s
+```
+
+Configure the DSN through `APP_STORAGE_POSTGRES_DSN` rather than committing credentials to `config.yaml`. TLS and database authentication are controlled by the DSN. The database must be reachable during startup.
+
+### MongoDB
+
+MongoDB stores the versioned identity state in one `opened_connect_state` collection document. Writes run in a MongoDB transaction and apply the same domain transition code as JSON/PostgreSQL. It requires a transaction-capable replica set or sharded cluster; a standalone MongoDB server cannot meet the atomic write contract. The adapter does not replay an application callback after a transaction error.
+
+```yaml
+storage:
+  backend: mongodb
+  dataDir: data
+  mongodb:
+    uri: ${APP_STORAGE_MONGODB_URI}
+    database: opened_connect_server
+    connectTimeout: 5s
+    serverSelectionTimeout: 5s
+```
+
+Configure the URI through `APP_STORAGE_MONGODB_URI` rather than committing credentials to `config.yaml`.
+
+### Common to both database backends
+
+Client secrets are encrypted the same way regardless of backend: AES-256-GCM with the client ID as authenticated data, using a key stored locally at `<dataDir>/.secret-protector/client-secrets.key` (mode 0600). This key is per-instance — deployments running multiple replicas against a shared database must currently point every replica at the same `dataDir` (e.g. a shared volume) for client secrets to decrypt consistently; a shared/externalized key-management design is tracked as follow-up work, not yet implemented.
 
 ## HTTPS deployment
 
@@ -229,7 +272,9 @@ This is the administrative client registry. OAuth authorization/token processing
 
 The server generates immutable `client_id` and `client_id_issued_at`. A `client_secret`, when required by the authentication or symmetric cryptographic metadata, is returned only on creation, first issuance after a metadata change, or rotation. Read/search responses never include it. Secrets have `client_secret_expires_at: 0` (no automatic expiry). The UI keeps a newly issued secret only in memory until dismissal or leaving its detail page, outside the query cache and browser storage. Rotation immediately replaces the stored secret.
 
-Clients share the transactional `identity.Store` interface and local `data/identity.json` store. Existing identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data. The encryption key is stored separately in `data/client-secrets.key` (mode 0600); back up both files together. Missing/invalid keys fail closed. Database adapters implement the client transaction methods and their own secret protection.
+Clients share the transactional `identity.Store` interface across all three backends. Existing JSON identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data; the encryption key is stored separately (`data/client-secrets.key` for the JSON backend, `<dataDir>/.secret-protector/client-secrets.key` for the database backends), mode 0600 — back up the key alongside the store. Missing/invalid keys fail closed. See [Storage backends](#storage-backends) for PostgreSQL/MongoDB details.
+
+The normal suite exercises JSON. To run the database contract test, set `TEST_POSTGRES_DSN` for PostgreSQL or `TEST_MONGODB_URI` for a transaction-capable MongoDB replica set. Those tests verify successful writes and callback rollback. Production migrations, normalized record tables/collections, and JSON-to-database import/export tooling are not implemented yet.
 
 API routes are grouped by access: `/api/admin/*` requires an administrator, `/api/user/*` provides self-service access to both users and admins, `/api/auth/*` handles authentication (only login is public), and `/api/public/*` supplies public bootstrap/health data. The infrastructure liveness probe remains `/livez`. Former ungrouped API paths return 404; API consumers must use the grouped paths. Browser page URLs are unchanged.
 
@@ -273,7 +318,7 @@ Password, email, role, and active-status changes revoke the user's browser sessi
 
 Signing checks certificate validity at issuance and rejects JWT lifetimes extending beyond it. Rotate keys before expiry. Clients requiring signed UserInfo or signed request objects are reported incompatible and cannot silently receive unsigned behavior. Unsupported request objects and response modes return protocol errors. Optional capabilities listed above remain unadvertised.
 
-Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATION_CODE_REVIEW.md](OIDC_AUTHORIZATION_CODE_REVIEW.md). Passing local tests is not OpenID conformance certification.
+Regression coverage and the original findings are recorded in [OIDC_AUTHORIZATION_CODE_REVIEW.md](docs/OIDC_AUTHORIZATION_CODE_REVIEW.md). Passing local tests is not OpenID conformance certification.
 
 ### Administrative activity monitoring
 
@@ -285,7 +330,7 @@ Monitoring endpoints use the existing admin browser session boundary:
 - `GET /api/admin/activity/{transactions|codes|tokens|refresh|consents}?q=...&status=...&grantType=...&audience=...&page=1`
 - `POST /api/admin/activity/{kind}/{id}/revoke` with `{}` and the session CSRF header
 
-The service rechecks admin authorization within the storage transaction. Responses are not cached, contain derived administrative record IDs, and exclude raw tokens, credential hashes, session/browser bindings, OAuth state/nonce, and PKCE material. List operations are part of the storage interface for future database adapters.
+The service rechecks admin authorization within the storage transaction. Responses are not cached, contain derived administrative record IDs, and exclude raw tokens, credential hashes, session/browser bindings, OAuth state/nonce, and PKCE material. List operations are part of the storage interface implemented identically by all three backends.
 
 Only active items can be revoked. Consumed codes, completed transactions, expired records, and obsolete consents have no revocation action; the API rechecks eligibility atomically and returns HTTP 409 if an item is no longer active. Revoking an active transaction cancels it; revoking an unused code prevents exchange. Revoking an access token blocks further UserInfo use. Revoking consent cancels current transactions, codes, and tokens for that user/client only; subsequent authorization requires a new consent decision. These mutations are atomic with protocol issuance; retries on an already-revoked record are harmless. Consent revocation preserves consumed/completed/expired history while cancelling active grants. Already-delivered signed ID tokens cannot be recalled; newly issued tokens record the ID-token expiry for display in record details.
 
@@ -350,7 +395,7 @@ have consumed an invitation; inspect the client inventory and rotate/recover
 credentials instead of blindly retrying registration.
 
 Implemented: the OIDC registration and configuration-read profile described in
-[DYNAMIC_CLIENT_REGISTRATION_PLAN.md](DYNAMIC_CLIENT_REGISTRATION_PLAN.md).
+[DYNAMIC_CLIENT_REGISTRATION_PLAN.md](docs/DYNAMIC_CLIENT_REGISTRATION_PLAN.md).
 RFC 7592 self-service update/delete remains an optional later phase; those methods
 return 405. Admins continue updating and deleting clients through `/api/admin/clients`.
 This is not a claim of full OpenID conformance certification.
@@ -482,8 +527,8 @@ These permissions are separate from client registration metadata and user
 profile claims. Dynamic clients receive none automatically. Saving permissions
 invalidates existing affected grants. Data migrates to identity schema version 4;
 legacy OIDC access tokens retain their UserInfo behavior and gain no refresh or
-resource authority. Future storage adapters must preserve the serializable
-issuance, rotation, revocation, and rollback contract in `identity.Store`.
+resource authority. All three storage backends preserve the same serializable
+issuance, rotation, revocation, and rollback contract defined by `identity.Store`.
 
 
 ## Logout and session activity
@@ -584,8 +629,8 @@ Creation is bounded at 10,000 retained provider sessions, 50,000 app association
 and 10,000 pending browser interactions. Saturation rejects new creation rather
 than dropping delivery intents or preventing termination. Operation summaries
 retain at most 10,000 entries. These initial limits and retention periods are fixed.
-Idle workers avoid rewriting unchanged storage. Deployments needing higher volume
-should use a transactional database adapter with equivalent guarantees.
+Idle workers avoid rewriting unchanged storage. Deployments needing shared durable
+state across replicas can select the PostgreSQL or MongoDB backend described above.
 
 Outbound logout blocks private, loopback, link-local and unspecified destinations
 by default, pins validated DNS results at connection time, and bypasses environment
@@ -604,6 +649,6 @@ exclude credentials, credential hashes, raw tokens and destination URLs.
 The manual `tests/e2e/logout-sessions.spec.ts` scenario uses two actual local RPs
 with independent JWT verification and two browser contexts. It proves local versus
 shared logout by checking protected app requests and a still-active second device.
-See [the implementation plan](LOGOUT_IMPLEMENTATION_PLAN.md) for the original
+See [the implementation plan](docs/LOGOUT_IMPLEMENTATION_PLAN.md) for the original
 scope and [test instructions](tests/README.md) for running it against a disposable
 instance. OpenID certification is not claimed.
