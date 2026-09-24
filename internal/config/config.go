@@ -385,20 +385,24 @@ storage:
 # or APP_STORAGE_MONGODB_URI rather than committing them to this file.
 # storage:
 #   backend: postgres
+#   dataDir: data # still required: signing keys and the client-secret encryption key live here
 #   postgres:
 #     dsn: ${APP_STORAGE_POSTGRES_DSN}
 #     maxOpenConns: 20
 #     maxIdleConns: 5
 #     connMaxLifetime: 30m
 #     connectTimeout: 5s
+#     statementTimeout: 10s
+#     sslMode: verify-full # overrides the DSN sslmode; require, verify-ca, or verify-full outside development/test
 #
 # storage:
 #   backend: mongodb
+#   dataDir: data
 #   mongodb:
 #     uri: ${APP_STORAGE_MONGODB_URI}
 #     database: opened_connect_server
 #     connectTimeout: 5s
-#     serverSelectionTimeout: 5s
+#     serverSelectionTimeout: 5s # requires a transaction-capable replica set or sharded cluster
 
 auth:
   sessionTTL: 8h

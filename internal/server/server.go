@@ -46,7 +46,7 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 		store, err = identity.OpenStore(context.Background(), identity.StoreOptions{
 			Backend: cfg.Storage.Backend, DataDir: cfg.Storage.DataDir,
 			PostgresDSN: cfg.Storage.Postgres.DSN, PostgresMaxOpen: cfg.Storage.Postgres.MaxOpenConns, PostgresMaxIdle: cfg.Storage.Postgres.MaxIdleConns,
-			PostgresConnMaxLifetime: cfg.Storage.Postgres.ConnMaxLifetime, PostgresConnectTimeout: cfg.Storage.Postgres.ConnectTimeout, PostgresStatementTimeout: cfg.Storage.Postgres.StatementTimeout,
+			PostgresConnMaxLifetime: cfg.Storage.Postgres.ConnMaxLifetime, PostgresConnectTimeout: cfg.Storage.Postgres.ConnectTimeout, PostgresStatementTimeout: cfg.Storage.Postgres.StatementTimeout, PostgresSSLMode: cfg.Storage.Postgres.SSLMode,
 			MongoURI: cfg.Storage.MongoDB.URI, MongoDatabase: cfg.Storage.MongoDB.Database,
 		})
 		if err != nil {

@@ -67,7 +67,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	store, err := identity.OpenStore(cmd.Context(), identity.StoreOptions{
 		Backend: cfg.Storage.Backend, DataDir: dir,
 		PostgresDSN: cfg.Storage.Postgres.DSN, PostgresMaxOpen: cfg.Storage.Postgres.MaxOpenConns, PostgresMaxIdle: cfg.Storage.Postgres.MaxIdleConns,
-		PostgresConnMaxLifetime: cfg.Storage.Postgres.ConnMaxLifetime, PostgresConnectTimeout: cfg.Storage.Postgres.ConnectTimeout, PostgresStatementTimeout: cfg.Storage.Postgres.StatementTimeout,
+		PostgresConnMaxLifetime: cfg.Storage.Postgres.ConnMaxLifetime, PostgresConnectTimeout: cfg.Storage.Postgres.ConnectTimeout, PostgresStatementTimeout: cfg.Storage.Postgres.StatementTimeout, PostgresSSLMode: cfg.Storage.Postgres.SSLMode,
 		MongoURI: cfg.Storage.MongoDB.URI, MongoDatabase: cfg.Storage.MongoDB.Database,
 	})
 	if err != nil {

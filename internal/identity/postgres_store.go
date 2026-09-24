@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +25,7 @@ type PostgresStoreConfig struct {
 	ConnMaxLifetime  time.Duration
 	ConnectTimeout   time.Duration
 	StatementTimeout time.Duration
+	SSLMode          string
 }
 
 type PostgresStore struct {
@@ -42,7 +45,8 @@ const (
 const maxWriteRetries = 3
 
 func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresStore, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+	dsn := postgresDSNWithSSLMode(cfg.DSN, cfg.SSLMode)
+	poolCfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse PostgreSQL DSN: %w", err)
 	}
@@ -61,16 +65,16 @@ func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresSt
 
 	pool, err := pgxpool.NewWithConfig(connectCtx, poolCfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
+		return nil, fmt.Errorf("connect PostgreSQL %s: %w", redactDSN(dsn), err)
 	}
 	if err := pool.Ping(connectCtx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
+		return nil, fmt.Errorf("ping PostgreSQL %s: %w", redactDSN(dsn), err)
 	}
 
-	if err := runPostgresMigrations(cfg.DSN); err != nil {
+	if err := runPostgresMigrations(dsn); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("migrate PostgreSQL %s: %w", redactDSN(cfg.DSN), err)
+		return nil, fmt.Errorf("migrate PostgreSQL %s: %w", redactDSN(dsn), err)
 	}
 
 	secrets, err := databaseSecretStore(cfg.DataDir, "postgres")
@@ -85,6 +89,26 @@ func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresSt
 	}
 
 	return &PostgresStore{pool: pool, secrets: secrets, statementTimeout: statementTimeout}, nil
+}
+
+// postgresDSNWithSSLMode makes storage.postgres.sslMode authoritative for
+// both the application pool and the short-lived migration connection. pgx
+// accepts URL and keyword/value DSNs; appending a final keyword overrides an
+// earlier sslmode in the latter form.
+func postgresDSNWithSSLMode(dsn, sslMode string) string {
+	if strings.TrimSpace(sslMode) == "" {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		u, err := url.Parse(dsn)
+		if err == nil {
+			query := u.Query()
+			query.Set("sslmode", sslMode)
+			u.RawQuery = query.Encode()
+			return u.String()
+		}
+	}
+	return dsn + " sslmode=" + sslMode
 }
 
 func (s *PostgresStore) Close() { s.pool.Close() }

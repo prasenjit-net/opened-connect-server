@@ -191,7 +191,7 @@ Set `storage.dataDir` or pass `--data-dir /absolute/path`. Relative storage path
 
 ### PostgreSQL
 
-PostgreSQL stores the versioned identity state in an `opened_connect_state` JSONB row. It is created on first connection. Writes run in `SERIALIZABLE` transactions and lock that row before applying the same domain transition code as the JSON store. A serialization conflict returns an error to the caller; it does not replay a callback that may have generated a credential.
+PostgreSQL stores identity and protocol records in normalized tables. Embedded SQL migrations run before the server accepts traffic. Reads use read-only transactions; writes use `SERIALIZABLE` transactions, retrying serialization and deadlock conflicts up to three times. Each transaction has the configured statement timeout.
 
 ```yaml
 storage:
@@ -203,13 +203,15 @@ storage:
     maxIdleConns: 5
     connMaxLifetime: 30m
     connectTimeout: 5s
+    statementTimeout: 10s
+    sslMode: verify-full
 ```
 
-Configure the DSN through `APP_STORAGE_POSTGRES_DSN` rather than committing credentials to `config.yaml`. TLS and database authentication are controlled by the DSN. The database must be reachable during startup.
+Configure the DSN through `APP_STORAGE_POSTGRES_DSN` rather than committing credentials to `config.yaml`. `sslMode` overrides any `sslmode` in that DSN and applies to both migrations and the connection pool. Production requires `require`, `verify-ca`, or `verify-full`. The database must be reachable during startup.
 
 ### MongoDB
 
-MongoDB stores the versioned identity state in one `opened_connect_state` collection document. Writes run in a MongoDB transaction and apply the same domain transition code as JSON/PostgreSQL. It requires a transaction-capable replica set or sharded cluster; a standalone MongoDB server cannot meet the atomic write contract. The adapter does not replay an application callback after a transaction error.
+MongoDB stores identity and protocol records in dedicated collections with the indexes needed by the store. Reads and writes use snapshot transactions with majority write concern. It requires a transaction-capable replica set or sharded cluster; a standalone MongoDB server cannot meet the atomic write contract. The MongoDB driver retries transient transaction and commit errors.
 
 ```yaml
 storage:
@@ -274,7 +276,7 @@ The server generates immutable `client_id` and `client_id_issued_at`. A `client_
 
 Clients share the transactional `identity.Store` interface across all three backends. Existing JSON identity files without clients remain valid. Client secrets use AES-256-GCM encryption with client IDs as authenticated data; the encryption key is stored separately (`data/client-secrets.key` for the JSON backend, `<dataDir>/.secret-protector/client-secrets.key` for the database backends), mode 0600 — back up the key alongside the store. Missing/invalid keys fail closed. See [Storage backends](#storage-backends) for PostgreSQL/MongoDB details.
 
-The normal suite exercises JSON. To run the database contract test, set `TEST_POSTGRES_DSN` for PostgreSQL or `TEST_MONGODB_URI` for a transaction-capable MongoDB replica set. Those tests verify successful writes and callback rollback. Production migrations, normalized record tables/collections, and JSON-to-database import/export tooling are not implemented yet.
+The normal suite exercises JSON. To run database contract tests, set `TEST_POSTGRES_DSN` for PostgreSQL or `TEST_MONGODB_URI` for a transaction-capable MongoDB replica set. They cover rollback and the higher-risk one-time credential, revision, and logout-delivery operations. JSON-to-database import/export tooling is not implemented.
 
 API routes are grouped by access: `/api/admin/*` requires an administrator, `/api/user/*` provides self-service access to both users and admins, `/api/auth/*` handles authentication (only login is public), and `/api/public/*` supplies public bootstrap/health data. The infrastructure liveness probe remains `/livez`. Former ungrouped API paths return 404; API consumers must use the grouped paths. Browser page URLs are unchanged.
 

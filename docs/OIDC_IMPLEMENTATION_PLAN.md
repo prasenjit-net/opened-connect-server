@@ -1,10 +1,12 @@
 # OpenID Connect Core and Discovery implementation plan
 
-Status: proposed implementation plan; no protocol endpoints are implemented by this document.
+Status: historical implementation plan. The authorization-code provider and its
+initial protocol endpoints are implemented; this document retains the design
+decisions and proposed follow-up work.
 
-The detailed follow-on proposal for logout extensions and OP/app session activity is [Logout and session activity implementation plan](LOGOUT_IMPLEMENTATION_PLAN.md).
+The detailed follow-on proposal for logout extensions and OP/app session activity is [Logout and session activity implementation plan](./LOGOUT_IMPLEMENTATION_PLAN.md).
 
-The follow-on proposal for multiple response types and form-post delivery is [Authorization response modes implementation plan](AUTHORIZATION_RESPONSE_MODES_IMPLEMENTATION_PLAN.md).
+The follow-on proposal for multiple response types and form-post delivery is [Authorization response modes implementation plan](./AUTHORIZATION_RESPONSE_MODES_IMPLEMENTATION_PLAN.md).
 
 ## 1. Objective and delivery scope
 

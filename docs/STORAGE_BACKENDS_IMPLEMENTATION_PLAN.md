@@ -1,6 +1,11 @@
 # Configurable JSON, PostgreSQL, and MongoDB storage backends
 
-Status: proposed.
+> **Status:** PostgreSQL and MongoDB backends, PostgreSQL migrations, and
+> backend contract coverage are implemented. This document preserves the design
+> decisions and follow-up work; import/export and storage-status tooling remain
+> open.
+
+Status: original design and rollout plan.
 
 ## Objective
 

@@ -12,6 +12,7 @@ type StoreOptions struct {
 	PostgresConnMaxLifetime                                time.Duration
 	PostgresConnectTimeout                                 time.Duration
 	PostgresStatementTimeout                               time.Duration
+	PostgresSSLMode                                        string
 }
 
 func OpenStore(ctx context.Context, o StoreOptions) (Store, error) {
@@ -27,6 +28,7 @@ func OpenStore(ctx context.Context, o StoreOptions) (Store, error) {
 			ConnMaxLifetime:  o.PostgresConnMaxLifetime,
 			ConnectTimeout:   o.PostgresConnectTimeout,
 			StatementTimeout: o.PostgresStatementTimeout,
+			SSLMode:          o.PostgresSSLMode,
 		})
 	case "mongodb":
 		return NewMongoStore(ctx, o.MongoURI, o.MongoDatabase, o.DataDir)
