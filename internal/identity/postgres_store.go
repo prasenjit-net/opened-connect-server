@@ -177,7 +177,7 @@ func (s *PostgresStore) runOnce(ctx context.Context, mode pgx.TxAccessMode, fn f
 		return err
 	}
 
-	ptx := &postgresTx{ctx: ctx, tx: tx, secrets: s.secrets, now: time.Now}
+	ptx := &postgresTx{postgresOperations: bindPostgresOperations(ctx, tx), secrets: s.secrets, now: time.Now}
 	if err := fn(ptx); err != nil {
 		return err
 	}

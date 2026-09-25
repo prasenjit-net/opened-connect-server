@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -19,7 +18,7 @@ import (
 // Store.Write caller (mongodb_store.go's withTransaction) still observes
 // it via tx.err, causing the transaction to abort.
 type mongoTx struct {
-	ctx   context.Context
+	mongoOperations
 	store *MongoStore
 	now   func() time.Time
 	err   error
@@ -60,6 +59,8 @@ func notFoundOrErr(err error) error {
 	}
 	return err
 }
+
+const mongoExists = "$exists"
 
 // ---- Users ----
 
@@ -120,7 +121,7 @@ func docToUser(d userDoc) User {
 
 func (m *mongoTx) User(id string) (User, error) {
 	var d userDoc
-	err := m.store.users.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.users, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return User{}, notFoundOrErr(err)
 	}
@@ -129,7 +130,7 @@ func (m *mongoTx) User(id string) (User, error) {
 
 func (m *mongoTx) UserByEmail(email string) (User, error) {
 	var d userDoc
-	err := m.store.users.FindOne(m.ctx, bson.D{{Key: "emailLower", Value: strings.ToLower(email)}}).Decode(&d)
+	err := m.findOne(m.store.users, bson.D{{Key: "emailLower", Value: strings.ToLower(email)}}).Decode(&d)
 	if err != nil {
 		return User{}, notFoundOrErr(err)
 	}
@@ -137,14 +138,14 @@ func (m *mongoTx) UserByEmail(email string) (User, error) {
 }
 
 func (m *mongoTx) Users() []User {
-	cur, err := m.store.users.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.users, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []User
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d userDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -173,7 +174,7 @@ func (m *mongoTx) SaveUser(user User) error {
 		return err
 	}
 	doc := userToDoc(user)
-	_, err = m.store.users.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: user.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err = m.replaceOne(m.store.users, bson.D{{Key: "_id", Value: user.ID}}, doc, options.Replace().SetUpsert(true))
 	if err != nil {
 		if isDuplicateKey(err) {
 			return ErrConflict
@@ -191,7 +192,7 @@ func (m *mongoTx) DeleteUser(id string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.oauthAccess.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
+	if _, err := m.deleteOne(m.store.oauthAccess, bson.D{{Key: "_id", Value: id}}); err != nil {
 		m.fail(err)
 		return
 	}
@@ -199,7 +200,7 @@ func (m *mongoTx) DeleteUser(id string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.users.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
+	if _, err := m.deleteOne(m.store.users, bson.D{{Key: "_id", Value: id}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -215,19 +216,19 @@ func (m *mongoTx) DeleteUserSessions(userID string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.authorizationCodes.DeleteMany(m.ctx, bson.D{{Key: "userId", Value: userID}}); err != nil {
+	if _, err := m.deleteMany(m.store.authorizationCodes, bson.D{{Key: "userId", Value: userID}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authzTransactions.DeleteMany(m.ctx, bson.D{{Key: "userId", Value: userID}}); err != nil {
+	if _, err := m.deleteMany(m.store.authzTransactions, bson.D{{Key: "userId", Value: userID}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.consents.DeleteMany(m.ctx, bson.D{{Key: "userId", Value: userID}}); err != nil {
+	if _, err := m.deleteMany(m.store.consents, bson.D{{Key: "userId", Value: userID}}); err != nil {
 		m.fail(err)
 		return
 	}
-	ids, err := m.distinctSessionIDs(bson.D{{Key: "userId", Value: userID}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}})
+	ids, err := m.distinctSessionIDs(bson.D{{Key: "userId", Value: userID}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}})
 	if err != nil {
 		m.fail(err)
 		return
@@ -239,13 +240,13 @@ func (m *mongoTx) DeleteUserSessions(userID string) {
 }
 
 func (m *mongoTx) distinctSessionIDs(filter bson.D) ([]string, error) {
-	cur, err := m.store.sessions.Find(m.ctx, filter, options.Find().SetProjection(bson.D{{Key: "id", Value: 1}}))
+	cur, err := m.find(m.store.sessions, filter, options.Find().SetProjection(bson.D{{Key: "id", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var ids []string
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var doc struct {
 			ID string `bson:"id"`
 		}
@@ -299,7 +300,7 @@ func docToSession(d sessionDoc) Session {
 // fileState.Session - callers separately check ExpiresAt themselves.
 func (m *mongoTx) Session(hash string) (Session, error) {
 	var d sessionDoc
-	err := m.store.sessions.FindOne(m.ctx, bson.D{{Key: "_id", Value: hash}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}}).Decode(&d)
+	err := m.findOne(m.store.sessions, bson.D{{Key: "_id", Value: hash}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}}).Decode(&d)
 	if err != nil {
 		return Session{}, notFoundOrErr(err)
 	}
@@ -307,14 +308,14 @@ func (m *mongoTx) Session(hash string) (Session, error) {
 }
 
 func (m *mongoTx) ListSessions() []Session {
-	cur, err := m.store.sessions.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.sessions, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []Session
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d sessionDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -333,7 +334,7 @@ func (m *mongoTx) SaveSession(session Session) {
 		return
 	}
 	doc := sessionToDoc(session)
-	_, err := m.store.sessions.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: session.Hash}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.sessions, bson.D{{Key: "_id", Value: session.Hash}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -343,7 +344,7 @@ func (m *mongoTx) RemoveSessionCredential(hash string) {
 	if m.poisoned() {
 		return
 	}
-	_, err := m.store.sessions.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: hash}})
+	_, err := m.deleteOne(m.store.sessions, bson.D{{Key: "_id", Value: hash}})
 	m.fail(err)
 }
 
@@ -380,7 +381,7 @@ func (m *mongoTx) CheckSessionCapacity(kind string) error {
 	// rejects inside a multi-document transaction
 	// (OperationNotSupportedInTransaction) - CountDocuments (aggregation
 	// based) is the transaction-safe alternative.
-	count, err := coll.CountDocuments(m.ctx, bson.D{})
+	count, err := m.countDocuments(coll, bson.D{})
 	if err != nil {
 		return err
 	}
@@ -398,7 +399,7 @@ func (m *mongoTx) EndSession(id, actor, reason string, now time.Time) {
 	if m.poisoned() {
 		return
 	}
-	cur, err := m.store.sessions.Find(m.ctx, bson.D{{Key: "id", Value: id}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}})
+	cur, err := m.find(m.store.sessions, bson.D{{Key: "id", Value: id}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}})
 	if err != nil {
 		m.fail(err)
 		return
@@ -407,23 +408,13 @@ func (m *mongoTx) EndSession(id, actor, reason string, now time.Time) {
 		Hash   string `bson:"_id"`
 		UserID string `bson:"userId"`
 	}
-	var live []liveSession
-	for cur.Next(m.ctx) {
-		var l liveSession
-		if err := cur.Decode(&l); err != nil {
-			cur.Close(m.ctx)
-			m.fail(err)
-			return
-		}
-		live = append(live, l)
-	}
-	cur.Close(m.ctx)
-	if err := cur.Err(); err != nil {
+	live, err := collectMongoDocuments[liveSession](cur)
+	if err != nil {
 		m.fail(err)
 		return
 	}
 	for _, l := range live {
-		_, err := m.store.sessions.UpdateOne(m.ctx,
+		_, err := m.updateOne(m.store.sessions,
 			bson.D{{Key: "_id", Value: l.Hash}},
 			bson.D{{Key: "$set", Value: bson.D{{Key: "endedAt", Value: now}, {Key: "endReason", Value: reason}, {Key: "csrf", Value: ""}}}},
 		)
@@ -433,40 +424,40 @@ func (m *mongoTx) EndSession(id, actor, reason string, now time.Time) {
 		}
 		m.SaveLogoutDelivery(LogoutDelivery{ID: "op-" + id, OPSessionID: id, UserID: l.UserID, Actor: actor, Reason: reason, Channel: "local", Status: "ended", CreatedAt: now, UpdatedAt: now})
 
-		appCur, err := m.store.appSessions.Find(m.ctx, bson.D{{Key: "opSessionId", Value: id}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
-		if err != nil {
-			m.fail(err)
+		m.endSessionGrants(id, actor, reason, now)
+		if m.poisoned() {
 			return
 		}
-		var appIDs []string
-		for appCur.Next(m.ctx) {
-			var doc struct {
-				ID string `bson:"_id"`
-			}
-			if err := appCur.Decode(&doc); err != nil {
-				appCur.Close(m.ctx)
-				m.fail(err)
-				return
-			}
-			appIDs = append(appIDs, doc.ID)
-		}
-		appCur.Close(m.ctx)
-		if err := appCur.Err(); err != nil {
-			m.fail(err)
-			return
-		}
-		for _, appID := range appIDs {
-			m.EndAppSession(appID, actor, reason, now)
-		}
+	}
+}
 
-		if _, err := m.store.authzTransactions.UpdateMany(m.ctx, bson.D{{Key: "opSessionId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
-			m.fail(err)
-			return
-		}
-		if _, err := m.store.authorizationCodes.UpdateMany(m.ctx, bson.D{{Key: "opSessionId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
-			m.fail(err)
-			return
-		}
+// endSessionGrants ends linked app sessions and revokes pending grants.
+func (m *mongoTx) endSessionGrants(id, actor, reason string, now time.Time) {
+	if m.poisoned() {
+		return
+	}
+
+	appCur, err := m.find(m.store.appSessions, bson.D{{Key: "opSessionId", Value: id}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	appIDs, err := mongoDocumentIDs(appCur)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	for _, appID := range appIDs {
+		m.EndAppSession(appID, actor, reason, now)
+	}
+
+	if _, err := m.updateMany(m.store.authzTransactions, bson.D{{Key: "opSessionId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+		m.fail(err)
+		return
+	}
+	if _, err := m.updateMany(m.store.authorizationCodes, bson.D{{Key: "opSessionId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+		m.fail(err)
+		return
 	}
 }
 
@@ -502,7 +493,7 @@ func docToAppSession(d appSessionDoc) AppSession {
 
 func (m *mongoTx) AppSession(id string) (AppSession, error) {
 	var d appSessionDoc
-	err := m.store.appSessions.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.appSessions, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return AppSession{}, notFoundOrErr(err)
 	}
@@ -510,14 +501,14 @@ func (m *mongoTx) AppSession(id string) (AppSession, error) {
 }
 
 func (m *mongoTx) ListAppSessions() []AppSession {
-	cur, err := m.store.appSessions.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.appSessions, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []AppSession
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d appSessionDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -536,7 +527,7 @@ func (m *mongoTx) SaveAppSession(a AppSession) {
 		return
 	}
 	doc := appSessionToDoc(a)
-	_, err := m.store.appSessions.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: a.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.appSessions, bson.D{{Key: "_id", Value: a.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -559,19 +550,19 @@ func (m *mongoTx) EndAppSession(id, actor, reason string, now time.Time) {
 	if !a.EndedAt.IsZero() {
 		return
 	}
-	if _, err := m.store.appSessions.UpdateOne(m.ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "endedAt", Value: now}, {Key: "endReason", Value: reason}}}}); err != nil {
+	if _, err := m.updateOne(m.store.appSessions, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "endedAt", Value: now}, {Key: "endReason", Value: reason}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.accessTokens.UpdateMany(m.ctx, bson.D{{Key: "appSessionId", Value: id}, {Key: "familyId", Value: ""}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.accessTokens, bson.D{{Key: "appSessionId", Value: id}, {Key: "familyId", Value: ""}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authorizationCodes.UpdateMany(m.ctx, bson.D{{Key: "opSessionId", Value: a.OPSessionID}, {Key: "clientId", Value: a.ClientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.authorizationCodes, bson.D{{Key: "opSessionId", Value: a.OPSessionID}, {Key: "clientId", Value: a.ClientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authzTransactions.UpdateMany(m.ctx, bson.D{{Key: "opSessionId", Value: a.OPSessionID}, {Key: "clientId", Value: a.ClientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.authzTransactions, bson.D{{Key: "opSessionId", Value: a.OPSessionID}, {Key: "clientId", Value: a.ClientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 		return
 	}
@@ -579,7 +570,7 @@ func (m *mongoTx) EndAppSession(id, actor, reason string, now time.Time) {
 	var clientDoc struct {
 		Metadata ClientMetadata `bson:"metadata"`
 	}
-	err = m.store.clients.FindOne(m.ctx, bson.D{{Key: "_id", Value: a.ClientID}}, options.FindOne().SetProjection(bson.D{{Key: "metadata", Value: 1}})).Decode(&clientDoc)
+	err = m.findOne(m.store.clients, bson.D{{Key: "_id", Value: a.ClientID}}, options.FindOne().SetProjection(bson.D{{Key: "metadata", Value: 1}})).Decode(&clientDoc)
 	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
 		m.fail(err)
 		return
@@ -613,7 +604,7 @@ type logoutOperationDoc struct {
 
 func (m *mongoTx) LogoutOperation(id string) (LogoutOperation, error) {
 	var d logoutOperationDoc
-	err := m.store.logoutOperations.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.logoutOperations, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return LogoutOperation{}, notFoundOrErr(err)
 	}
@@ -627,7 +618,7 @@ func (m *mongoTx) SaveLogoutOperation(op LogoutOperation) {
 	if m.poisoned() {
 		return
 	}
-	count, err := m.store.logoutOperations.CountDocuments(m.ctx, bson.D{})
+	count, err := m.countDocuments(m.store.logoutOperations, bson.D{})
 	if err != nil {
 		m.fail(err)
 		return
@@ -636,20 +627,20 @@ func (m *mongoTx) SaveLogoutOperation(op LogoutOperation) {
 		var oldest struct {
 			ID string `bson:"_id"`
 		}
-		err := m.store.logoutOperations.FindOne(m.ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: 1}}).SetProjection(bson.D{{Key: "_id", Value: 1}})).Decode(&oldest)
+		err := m.findOne(m.store.logoutOperations, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: 1}}).SetProjection(bson.D{{Key: "_id", Value: 1}})).Decode(&oldest)
 		if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
 			m.fail(err)
 			return
 		}
 		if oldest.ID != "" {
-			if _, err := m.store.logoutOperations.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: oldest.ID}}); err != nil {
+			if _, err := m.deleteOne(m.store.logoutOperations, bson.D{{Key: "_id", Value: oldest.ID}}); err != nil {
 				m.fail(err)
 				return
 			}
 		}
 	}
 	doc := logoutOperationDoc{ID: op.ID, Actor: op.Actor, Kind: op.Kind, CreatedAt: op.CreatedAt, Targets: op.Targets}
-	_, err = m.store.logoutOperations.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: op.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err = m.replaceOne(m.store.logoutOperations, bson.D{{Key: "_id", Value: op.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -705,14 +696,14 @@ func docToLogoutDelivery(d logoutDeliveryDoc) LogoutDelivery {
 }
 
 func (m *mongoTx) ListLogoutDeliveries() []LogoutDelivery {
-	cur, err := m.store.logoutDeliveries.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.logoutDeliveries, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []LogoutDelivery
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d logoutDeliveryDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -734,7 +725,7 @@ func (m *mongoTx) SaveLogoutDelivery(d LogoutDelivery) {
 		return
 	}
 	doc := logoutDeliveryToDoc(d)
-	_, err := m.store.logoutDeliveries.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: d.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.logoutDeliveries, bson.D{{Key: "_id", Value: d.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -756,7 +747,7 @@ type logoutInteractionDoc struct {
 
 func (m *mongoTx) LogoutInteraction(id string) (LogoutInteraction, error) {
 	var d logoutInteractionDoc
-	err := m.store.logoutInteractions.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.logoutInteractions, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return LogoutInteraction{}, notFoundOrErr(err)
 	}
@@ -774,7 +765,7 @@ func (m *mongoTx) SaveLogoutInteraction(v LogoutInteraction) {
 		ID: v.ID, ClientID: v.ClientID, AppSessionID: v.AppSessionID, BindingHash: v.BindingHash, CSRF: v.CSRF,
 		OPSessionID: v.OPSessionID, UserID: v.UserID, RedirectURI: v.RedirectURI, State: v.State, ExpiresAt: v.ExpiresAt, Completed: v.Completed,
 	}
-	_, err := m.store.logoutInteractions.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: v.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.logoutInteractions, bson.D{{Key: "_id", Value: v.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -791,7 +782,7 @@ func (m *mongoTx) PruneSessions(now time.Time) {
 	if m.poisoned() {
 		return
 	}
-	ids, err := m.distinctSessionIDs(bson.D{{Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}, {Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}})
+	ids, err := m.distinctSessionIDs(bson.D{{Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}, {Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}})
 	if err != nil {
 		m.fail(err)
 		return
@@ -820,11 +811,11 @@ func (m *mongoTx) PruneLogoutState(now time.Time) {
 		{m.store.logoutOperations, bson.D{{Key: "createdAt", Value: bson.D{{Key: "$lt", Value: cutoff}}}}},
 		{m.store.logoutInteractions, bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}}},
 		{m.store.logoutDeliveries, bson.D{{Key: "createdAt", Value: bson.D{{Key: "$lt", Value: cutoff}}}}},
-		{m.store.appSessions, bson.D{{Key: "endedAt", Value: bson.D{{Key: "$exists", Value: true}, {Key: "$lt", Value: cutoff}}}}},
-		{m.store.sessions, bson.D{{Key: "endedAt", Value: bson.D{{Key: "$exists", Value: true}, {Key: "$lt", Value: cutoff}}}}},
+		{m.store.appSessions, bson.D{{Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: true}, {Key: "$lt", Value: cutoff}}}}},
+		{m.store.sessions, bson.D{{Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: true}, {Key: "$lt", Value: cutoff}}}}},
 	}
 	for _, op := range ops {
-		if _, err := op.coll.DeleteMany(m.ctx, op.filter); err != nil {
+		if _, err := m.deleteMany(op.coll, op.filter); err != nil {
 			m.fail(err)
 			return
 		}
@@ -840,25 +831,25 @@ func (m *mongoTx) PruneOIDCState(now time.Time) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.refreshFamilies.DeleteMany(m.ctx, bson.D{{Key: "retainUntil", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
+	if _, err := m.deleteMany(m.store.refreshFamilies, bson.D{{Key: "retainUntil", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authzTransactions.DeleteMany(m.ctx, bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
+	if _, err := m.deleteMany(m.store.authzTransactions, bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authorizationCodes.DeleteMany(m.ctx, bson.D{
+	if _, err := m.deleteMany(m.store.authorizationCodes, bson.D{
 		{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}},
 		{Key: "$or", Value: bson.A{
-			bson.D{{Key: "retainUntil", Value: bson.D{{Key: "$exists", Value: false}}}},
+			bson.D{{Key: "retainUntil", Value: bson.D{{Key: mongoExists, Value: false}}}},
 			bson.D{{Key: "retainUntil", Value: bson.D{{Key: "$lte", Value: now}}}},
 		}},
 	}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.accessTokens.DeleteMany(m.ctx, bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
+	if _, err := m.deleteMany(m.store.accessTokens, bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$lte", Value: now}}}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -910,7 +901,7 @@ func docToAccessToken(d accessTokenDoc) AccessToken {
 
 func (m *mongoTx) AccessToken(hash string) (AccessToken, error) {
 	var d accessTokenDoc
-	err := m.store.accessTokens.FindOne(m.ctx, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
+	err := m.findOne(m.store.accessTokens, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
 	if err != nil {
 		return AccessToken{}, notFoundOrErr(err)
 	}
@@ -918,14 +909,14 @@ func (m *mongoTx) AccessToken(hash string) (AccessToken, error) {
 }
 
 func (m *mongoTx) ListAccessTokens() []AccessToken {
-	cur, err := m.store.accessTokens.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
+	cur, err := m.find(m.store.accessTokens, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []AccessToken
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d accessTokenDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -944,7 +935,7 @@ func (m *mongoTx) SaveAccessToken(a AccessToken) {
 		return
 	}
 	doc := accessTokenToDoc(a)
-	_, err := m.store.accessTokens.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: a.Hash}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.accessTokens, bson.D{{Key: "_id", Value: a.Hash}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -952,7 +943,7 @@ func (m *mongoTx) RevokeAccessToken(hash string) {
 	if m.poisoned() {
 		return
 	}
-	_, err := m.store.accessTokens.UpdateOne(m.ctx, bson.D{{Key: "_id", Value: hash}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}})
+	_, err := m.updateOne(m.store.accessTokens, bson.D{{Key: "_id", Value: hash}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}})
 	m.fail(err)
 }
 
@@ -964,7 +955,7 @@ func (m *mongoTx) RevokeAccessTokensForUser(userID string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.accessTokens.UpdateMany(m.ctx, bson.D{{Key: "userId", Value: userID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.accessTokens, bson.D{{Key: "userId", Value: userID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -977,7 +968,7 @@ func (m *mongoTx) RevokeAccessTokensForClient(clientID string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.accessTokens.UpdateMany(m.ctx, bson.D{{Key: "clientId", Value: clientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.accessTokens, bson.D{{Key: "clientId", Value: clientID}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -990,7 +981,7 @@ func (m *mongoTx) RevokeAccessTokensForCode(codeHash string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.accessTokens.UpdateMany(m.ctx, bson.D{{Key: "codeHash", Value: codeHash}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.accessTokens, bson.D{{Key: "codeHash", Value: codeHash}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -1000,24 +991,24 @@ func (m *mongoTx) RevokeAccessTokensForCode(codeHash string) {
 // access-token cascade also runs.
 func (m *mongoTx) revokeFamiliesMatching(filter bson.D) {
 	filter = append(bson.D{{Key: "revoked", Value: bson.D{{Key: "$ne", Value: true}}}}, filter...)
-	cur, err := m.store.refreshFamilies.Find(m.ctx, filter, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	cur, err := m.find(m.store.refreshFamilies, filter, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return
 	}
 	var ids []string
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var doc struct {
 			ID string `bson:"_id"`
 		}
 		if err := cur.Decode(&doc); err != nil {
-			cur.Close(m.ctx)
+			cur.close()
 			m.fail(err)
 			return
 		}
 		ids = append(ids, doc.ID)
 	}
-	cur.Close(m.ctx)
+	cur.close()
 	if err := cur.Err(); err != nil {
 		m.fail(err)
 		return
@@ -1065,7 +1056,7 @@ func docToClient(d clientDoc) ClientRecord {
 
 func (m *mongoTx) Client(id string) (ClientRecord, error) {
 	var d clientDoc
-	err := m.store.clients.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.clients, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return ClientRecord{}, notFoundOrErr(err)
 	}
@@ -1073,14 +1064,14 @@ func (m *mongoTx) Client(id string) (ClientRecord, error) {
 }
 
 func (m *mongoTx) Clients() []ClientRecord {
-	cur, err := m.store.clients.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
+	cur, err := m.find(m.store.clients, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []ClientRecord
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d clientDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1105,7 +1096,7 @@ func (m *mongoTx) SaveClient(c ClientRecord) {
 		return
 	}
 	var existing clientDoc
-	err := m.store.clients.FindOne(m.ctx, bson.D{{Key: "_id", Value: c.ID}}).Decode(&existing)
+	err := m.findOne(m.store.clients, bson.D{{Key: "_id", Value: c.ID}}).Decode(&existing)
 	hadOld := err == nil
 	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
 		m.fail(err)
@@ -1119,7 +1110,7 @@ func (m *mongoTx) SaveClient(c ClientRecord) {
 	if hadOld {
 		doc.OAuthPolicy = existing.OAuthPolicy
 	}
-	_, err = m.store.clients.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: c.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err = m.replaceOne(m.store.clients, bson.D{{Key: "_id", Value: c.ID}}, doc, options.Replace().SetUpsert(true))
 	if err != nil {
 		m.fail(err)
 		return
@@ -1138,7 +1129,7 @@ func (m *mongoTx) DeleteClient(id string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.clients.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: id}}); err != nil {
+	if _, err := m.deleteOne(m.store.clients, bson.D{{Key: "_id", Value: id}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -1154,24 +1145,24 @@ func (m *mongoTx) invalidateClientGrants(clientID string) {
 	if m.poisoned() {
 		return
 	}
-	cur, err := m.store.appSessions.Find(m.ctx, bson.D{{Key: "clientId", Value: clientID}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	cur, err := m.find(m.store.appSessions, bson.D{{Key: "clientId", Value: clientID}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return
 	}
 	var appIDs []string
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var doc struct {
 			ID string `bson:"_id"`
 		}
 		if err := cur.Decode(&doc); err != nil {
-			cur.Close(m.ctx)
+			cur.close()
 			m.fail(err)
 			return
 		}
 		appIDs = append(appIDs, doc.ID)
 	}
-	cur.Close(m.ctx)
+	cur.close()
 	if err := cur.Err(); err != nil {
 		m.fail(err)
 		return
@@ -1184,15 +1175,15 @@ func (m *mongoTx) invalidateClientGrants(clientID string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.authorizationCodes.DeleteMany(m.ctx, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
+	if _, err := m.deleteMany(m.store.authorizationCodes, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.authzTransactions.DeleteMany(m.ctx, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
+	if _, err := m.deleteMany(m.store.authzTransactions, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.consents.DeleteMany(m.ctx, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
+	if _, err := m.deleteMany(m.store.consents, bson.D{{Key: "clientId", Value: clientID}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -1207,7 +1198,7 @@ func (m *mongoTx) OAuthPolicy(id string) OAuthPolicy {
 	var d struct {
 		OAuthPolicy *oauthPolicyDoc `bson:"oauthPolicy"`
 	}
-	err := m.store.clients.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}, options.FindOne().SetProjection(bson.D{{Key: "oauthPolicy", Value: 1}})).Decode(&d)
+	err := m.findOne(m.store.clients, bson.D{{Key: "_id", Value: id}}, options.FindOne().SetProjection(bson.D{{Key: "oauthPolicy", Value: 1}})).Decode(&d)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			m.fail(err)
@@ -1241,7 +1232,7 @@ func (m *mongoTx) SaveOAuthPolicy(id string, policy OAuthPolicy) {
 		IntrospectionEnabled: policy.IntrospectionEnabled, IntrospectionAudiences: policy.IntrospectionAudiences,
 		RefreshInspection: policy.RefreshInspection, RefreshEnabled: policy.RefreshEnabled, PasswordEnabled: policy.PasswordEnabled,
 	}
-	res, err := m.store.clients.UpdateOne(m.ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "oauthPolicy", Value: doc}}}})
+	res, err := m.updateOne(m.store.clients, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "oauthPolicy", Value: doc}}}})
 	if err != nil {
 		m.fail(err)
 		return
@@ -1257,7 +1248,7 @@ func (m *mongoTx) OAuthAccess(id string) OAuthAccess {
 	var d struct {
 		Access map[string][]string `bson:"access"`
 	}
-	err := m.store.oauthAccess.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.oauthAccess, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			m.fail(err)
@@ -1279,29 +1270,29 @@ func (m *mongoTx) SaveOAuthAccess(id string, access OAuthAccess) {
 		return
 	}
 	doc := bson.D{{Key: "_id", Value: id}, {Key: "userId", Value: id}, {Key: "access", Value: map[string][]string(access)}}
-	_, err := m.store.oauthAccess.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: id}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.oauthAccess, bson.D{{Key: "_id", Value: id}}, doc, options.Replace().SetUpsert(true))
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	cur, err := m.store.appSessions.Find(m.ctx, bson.D{{Key: "userId", Value: id}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	cur, err := m.find(m.store.appSessions, bson.D{{Key: "userId", Value: id}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return
 	}
 	var appIDs []string
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d struct {
 			ID string `bson:"_id"`
 		}
 		if err := cur.Decode(&d); err != nil {
-			cur.Close(m.ctx)
+			cur.close()
 			m.fail(err)
 			return
 		}
 		appIDs = append(appIDs, d.ID)
 	}
-	cur.Close(m.ctx)
+	cur.close()
 	if err := cur.Err(); err != nil {
 		m.fail(err)
 		return
@@ -1356,7 +1347,7 @@ func docToRefreshFamily(d refreshFamilyDoc) RefreshFamily {
 
 func (m *mongoTx) RefreshFamily(id string) (RefreshFamily, error) {
 	var d refreshFamilyDoc
-	err := m.store.refreshFamilies.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.refreshFamilies, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return RefreshFamily{}, notFoundOrErr(err)
 	}
@@ -1364,14 +1355,14 @@ func (m *mongoTx) RefreshFamily(id string) (RefreshFamily, error) {
 }
 
 func (m *mongoTx) ListRefreshFamilies() []RefreshFamily {
-	cur, err := m.store.refreshFamilies.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.refreshFamilies, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []RefreshFamily
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d refreshFamilyDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1393,7 +1384,7 @@ func (m *mongoTx) SaveRefreshFamily(f RefreshFamily) {
 		return
 	}
 	var existing refreshFamilyDoc
-	err := m.store.refreshFamilies.FindOne(m.ctx, bson.D{{Key: "_id", Value: f.ID}}).Decode(&existing)
+	err := m.findOne(m.store.refreshFamilies, bson.D{{Key: "_id", Value: f.ID}}).Decode(&existing)
 	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
 		m.fail(err)
 		return
@@ -1404,7 +1395,7 @@ func (m *mongoTx) SaveRefreshFamily(f RefreshFamily) {
 		CreatedAt: f.CreatedAt, AbsoluteExpiry: f.AbsoluteExpiry, IdleExpiry: f.IdleExpiry, RetainUntil: f.RetainUntil, Revoked: f.Revoked,
 		Tokens: existing.Tokens,
 	}
-	_, err = m.store.refreshFamilies.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: f.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err = m.replaceOne(m.store.refreshFamilies, bson.D{{Key: "_id", Value: f.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -1414,11 +1405,11 @@ func (m *mongoTx) RevokeRefreshFamily(id string) {
 	if m.poisoned() {
 		return
 	}
-	if _, err := m.store.refreshFamilies.UpdateOne(m.ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateOne(m.store.refreshFamilies, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 		return
 	}
-	if _, err := m.store.accessTokens.UpdateMany(m.ctx, bson.D{{Key: "familyId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
+	if _, err := m.updateMany(m.store.accessTokens, bson.D{{Key: "familyId", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "revoked", Value: true}}}}); err != nil {
 		m.fail(err)
 	}
 }
@@ -1427,7 +1418,7 @@ func (m *mongoTx) RevokeRefreshFamily(id string) {
 // all families, backed by the tokens.hash index.
 func (m *mongoTx) RefreshToken(hash string) (RefreshToken, error) {
 	var d refreshFamilyDoc
-	err := m.store.refreshFamilies.FindOne(m.ctx,
+	err := m.findOne(m.store.refreshFamilies,
 		bson.D{{Key: "tokens.hash", Value: hash}},
 		options.FindOne().SetProjection(bson.D{{Key: "tokens.$", Value: 1}}),
 	).Decode(&d)
@@ -1442,14 +1433,14 @@ func (m *mongoTx) RefreshToken(hash string) (RefreshToken, error) {
 }
 
 func (m *mongoTx) ListRefreshTokens() []RefreshToken {
-	cur, err := m.store.refreshFamilies.Find(m.ctx, bson.D{{Key: "tokens", Value: bson.D{{Key: "$exists", Value: true}, {Key: "$ne", Value: bson.A{}}}}})
+	cur, err := m.find(m.store.refreshFamilies, bson.D{{Key: "tokens", Value: bson.D{{Key: mongoExists, Value: true}, {Key: "$ne", Value: bson.A{}}}}})
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []RefreshToken
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d refreshFamilyDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1478,7 +1469,7 @@ func (m *mongoTx) SaveRefreshToken(t RefreshToken) {
 		return
 	}
 	elem := refreshTokenElem{Hash: t.Hash, Scopes: t.Scopes, IssuedAt: t.IssuedAt, Consumed: t.Consumed}
-	res, err := m.store.refreshFamilies.UpdateOne(m.ctx,
+	res, err := m.updateOne(m.store.refreshFamilies,
 		bson.D{{Key: "_id", Value: t.FamilyID}, {Key: "tokens.hash", Value: t.Hash}},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "tokens.$", Value: elem}}}},
 	)
@@ -1487,7 +1478,7 @@ func (m *mongoTx) SaveRefreshToken(t RefreshToken) {
 		return
 	}
 	if res.MatchedCount == 0 {
-		_, err := m.store.refreshFamilies.UpdateOne(m.ctx,
+		_, err := m.updateOne(m.store.refreshFamilies,
 			bson.D{{Key: "_id", Value: t.FamilyID}},
 			bson.D{{Key: "$push", Value: bson.D{{Key: "tokens", Value: elem}}}},
 		)
@@ -1515,7 +1506,7 @@ func docToInitialToken(d initialAccessTokenDoc) InitialAccessToken {
 
 func (m *mongoTx) InitialToken(hash string) (InitialAccessToken, error) {
 	var d initialAccessTokenDoc
-	err := m.store.initialAccessTokens.FindOne(m.ctx, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
+	err := m.findOne(m.store.initialAccessTokens, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
 	if err != nil {
 		return InitialAccessToken{}, notFoundOrErr(err)
 	}
@@ -1523,14 +1514,14 @@ func (m *mongoTx) InitialToken(hash string) (InitialAccessToken, error) {
 }
 
 func (m *mongoTx) InitialTokens() []InitialAccessToken {
-	cur, err := m.store.initialAccessTokens.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
+	cur, err := m.find(m.store.initialAccessTokens, bson.D{}, options.Find().SetSort(bson.D{{Key: "issuedAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []InitialAccessToken
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d initialAccessTokenDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1555,7 +1546,7 @@ func (m *mongoTx) SaveInitialToken(t InitialAccessToken) {
 		return
 	}
 	doc := initialAccessTokenDoc{Hash: t.Hash, ID: t.ID, Label: t.Label, IssuedBy: t.IssuedBy, IssuedAt: t.IssuedAt, ExpiresAt: t.ExpiresAt, MaxUses: t.MaxUses, Uses: t.Uses, Revoked: t.Revoked}
-	_, err := m.store.initialAccessTokens.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: t.Hash}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.initialAccessTokens, bson.D{{Key: "_id", Value: t.Hash}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -1565,7 +1556,7 @@ func (m *mongoTx) RegistrationToken(clientID string) (RegistrationAccessToken, e
 		Hash     string    `bson:"hash"`
 		IssuedAt time.Time `bson:"issuedAt"`
 	}
-	err := m.store.registrationAccessTokens.FindOne(m.ctx, bson.D{{Key: "_id", Value: clientID}}).Decode(&d)
+	err := m.findOne(m.store.registrationAccessTokens, bson.D{{Key: "_id", Value: clientID}}).Decode(&d)
 	if err != nil {
 		return RegistrationAccessToken{}, notFoundOrErr(err)
 	}
@@ -1581,7 +1572,7 @@ func (m *mongoTx) SaveRegistrationToken(t RegistrationAccessToken) {
 		return
 	}
 	doc := bson.D{{Key: "_id", Value: t.ClientID}, {Key: "hash", Value: t.Hash}, {Key: "issuedAt", Value: t.IssuedAt}}
-	_, err := m.store.registrationAccessTokens.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: t.ClientID}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.registrationAccessTokens, bson.D{{Key: "_id", Value: t.ClientID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -1589,7 +1580,7 @@ func (m *mongoTx) DeleteRegistrationToken(clientID string) {
 	if m.poisoned() {
 		return
 	}
-	_, err := m.store.registrationAccessTokens.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: clientID}})
+	_, err := m.deleteOne(m.store.registrationAccessTokens, bson.D{{Key: "_id", Value: clientID}})
 	m.fail(err)
 }
 
@@ -1638,7 +1629,7 @@ func docToAuthzTransaction(d authzTransactionDoc) AuthzTransaction {
 
 func (m *mongoTx) AuthzTransaction(id string) (AuthzTransaction, error) {
 	var d authzTransactionDoc
-	err := m.store.authzTransactions.FindOne(m.ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := m.findOne(m.store.authzTransactions, bson.D{{Key: "_id", Value: id}}).Decode(&d)
 	if err != nil {
 		return AuthzTransaction{}, notFoundOrErr(err)
 	}
@@ -1646,14 +1637,14 @@ func (m *mongoTx) AuthzTransaction(id string) (AuthzTransaction, error) {
 }
 
 func (m *mongoTx) ListAuthzTransactions() []AuthzTransaction {
-	cur, err := m.store.authzTransactions.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.authzTransactions, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []AuthzTransaction
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d authzTransactionDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1681,7 +1672,7 @@ func (m *mongoTx) SaveAuthzTransaction(t AuthzTransaction) {
 	if !t.ReauthenticateAfter.IsZero() {
 		doc.ReauthenticateAfter = &t.ReauthenticateAfter
 	}
-	_, err := m.store.authzTransactions.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: t.ID}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.authzTransactions, bson.D{{Key: "_id", Value: t.ID}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -1689,7 +1680,7 @@ func (m *mongoTx) DeleteAuthzTransaction(id string) {
 	if m.poisoned() {
 		return
 	}
-	_, err := m.store.authzTransactions.DeleteOne(m.ctx, bson.D{{Key: "_id", Value: id}})
+	_, err := m.deleteOne(m.store.authzTransactions, bson.D{{Key: "_id", Value: id}})
 	m.fail(err)
 }
 
@@ -1734,7 +1725,7 @@ func docToAuthorizationCode(d authorizationCodeDoc) AuthorizationCode {
 
 func (m *mongoTx) AuthorizationCode(hash string) (AuthorizationCode, error) {
 	var d authorizationCodeDoc
-	err := m.store.authorizationCodes.FindOne(m.ctx, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
+	err := m.findOne(m.store.authorizationCodes, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
 	if err != nil {
 		return AuthorizationCode{}, notFoundOrErr(err)
 	}
@@ -1742,14 +1733,14 @@ func (m *mongoTx) AuthorizationCode(hash string) (AuthorizationCode, error) {
 }
 
 func (m *mongoTx) ListAuthorizationCodes() []AuthorizationCode {
-	cur, err := m.store.authorizationCodes.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cur, err := m.find(m.store.authorizationCodes, bson.D{}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []AuthorizationCode
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d authorizationCodeDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1779,7 +1770,7 @@ func (m *mongoTx) SaveAuthorizationCode(c AuthorizationCode) {
 	if !c.RetainUntil.IsZero() {
 		doc.RetainUntil = &c.RetainUntil
 	}
-	_, err := m.store.authorizationCodes.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: c.Hash}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.authorizationCodes, bson.D{{Key: "_id", Value: c.Hash}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
 }
 
@@ -1797,7 +1788,7 @@ type consentDoc struct {
 
 func (m *mongoTx) Consent(userID, clientID string) (Consent, error) {
 	var d consentDoc
-	err := m.store.consents.FindOne(m.ctx, bson.D{{Key: "_id", Value: consentID(userID, clientID)}}).Decode(&d)
+	err := m.findOne(m.store.consents, bson.D{{Key: "_id", Value: consentID(userID, clientID)}}).Decode(&d)
 	if err != nil {
 		return Consent{}, notFoundOrErr(err)
 	}
@@ -1805,14 +1796,14 @@ func (m *mongoTx) Consent(userID, clientID string) (Consent, error) {
 }
 
 func (m *mongoTx) ListConsents() []Consent {
-	cur, err := m.store.consents.Find(m.ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "grantedAt", Value: 1}}))
+	cur, err := m.find(m.store.consents, bson.D{}, options.Find().SetSort(bson.D{{Key: "grantedAt", Value: 1}}))
 	if err != nil {
 		m.fail(err)
 		return nil
 	}
-	defer cur.Close(m.ctx)
+	defer cur.close()
 	var out []Consent
-	for cur.Next(m.ctx) {
+	for cur.next() {
 		var d consentDoc
 		if err := cur.Decode(&d); err != nil {
 			m.fail(err)
@@ -1835,25 +1826,13 @@ func (m *mongoTx) SaveConsent(c Consent) {
 	}
 	id := consentID(c.UserID, c.ClientID)
 	if c.Revoked {
-		cur, err := m.store.appSessions.Find(m.ctx, bson.D{{Key: "userId", Value: c.UserID}, {Key: "clientId", Value: c.ClientID}, {Key: "endedAt", Value: bson.D{{Key: "$exists", Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+		cur, err := m.find(m.store.appSessions, bson.D{{Key: "userId", Value: c.UserID}, {Key: "clientId", Value: c.ClientID}, {Key: "endedAt", Value: bson.D{{Key: mongoExists, Value: false}}}}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
 		if err != nil {
 			m.fail(err)
 			return
 		}
-		var appIDs []string
-		for cur.Next(m.ctx) {
-			var d struct {
-				ID string `bson:"_id"`
-			}
-			if err := cur.Decode(&d); err != nil {
-				cur.Close(m.ctx)
-				m.fail(err)
-				return
-			}
-			appIDs = append(appIDs, d.ID)
-		}
-		cur.Close(m.ctx)
-		if err := cur.Err(); err != nil {
+		appIDs, err := mongoDocumentIDs(cur)
+		if err != nil {
 			m.fail(err)
 			return
 		}
@@ -1872,6 +1851,33 @@ func (m *mongoTx) SaveConsent(c Consent) {
 		}
 	}
 	doc := consentDoc{ID: id, UserID: c.UserID, ClientID: c.ClientID, Scopes: c.Scopes, PolicyRevision: c.PolicyRevision, GrantedAt: c.GrantedAt, Revoked: c.Revoked}
-	_, err := m.store.consents.ReplaceOne(m.ctx, bson.D{{Key: "_id", Value: id}}, doc, options.Replace().SetUpsert(true))
+	_, err := m.replaceOne(m.store.consents, bson.D{{Key: "_id", Value: id}}, doc, options.Replace().SetUpsert(true))
 	m.fail(err)
+}
+
+func mongoDocumentIDs(cur *mongoCursor) ([]string, error) {
+	docs, err := collectMongoDocuments[struct {
+		ID string `bson:"_id"`
+	}](cur)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	return ids, nil
+}
+
+func collectMongoDocuments[T any](cur *mongoCursor) ([]T, error) {
+	defer cur.close()
+	var docs []T
+	for cur.next() {
+		var doc T
+		if err := cur.Decode(&doc); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, cur.Err()
 }

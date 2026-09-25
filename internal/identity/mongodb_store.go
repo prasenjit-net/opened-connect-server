@@ -201,7 +201,7 @@ func (s *MongoStore) withTransaction(ctx context.Context, fn func(*mongoTx) erro
 		SetWriteConcern(writeconcern.Majority())
 
 	_, err = session.WithTransaction(ctx, func(sc context.Context) (any, error) {
-		tx := &mongoTx{ctx: sc, store: s}
+		tx := &mongoTx{mongoOperations: bindMongoOperations(sc), store: s}
 		if err := fn(tx); err != nil {
 			return nil, err
 		}

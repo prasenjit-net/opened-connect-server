@@ -9,6 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	// Register the pgx database/sql driver used by sql.Open below.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 

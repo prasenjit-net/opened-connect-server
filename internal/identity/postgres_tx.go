@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,8 +17,7 @@ import (
 // still observes it and the transaction still rolls back (see
 // postgres_store.go's runOnce).
 type postgresTx struct {
-	ctx     context.Context
-	tx      pgx.Tx
+	postgresOperations
 	secrets *FileStore
 	now     func() time.Time
 	err     error
@@ -133,17 +131,17 @@ func scanUser(row pgx.Row) (User, error) {
 }
 
 func (p *postgresTx) User(id string) (User, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+userColumns+` FROM users WHERE id = $1`, id)
 	return scanUser(row)
 }
 
 func (p *postgresTx) UserByEmail(email string) (User, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+userColumns+` FROM users WHERE lower(email) = lower($1)`, email)
+	row := p.queryRow(`SELECT `+userColumns+` FROM users WHERE lower(email) = lower($1)`, email)
 	return scanUser(row)
 }
 
 func (p *postgresTx) Users() []User {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+userColumns+` FROM users ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + userColumns + ` FROM users ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -174,7 +172,7 @@ func (p *postgresTx) SaveUser(user User) error {
 	if p.poisoned() {
 		return p.err
 	}
-	oldRow := p.tx.QueryRow(p.ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, user.ID)
+	oldRow := p.queryRow(`SELECT `+userColumns+` FROM users WHERE id = $1`, user.ID)
 	existing, err := scanUser(oldRow)
 	hadOld := err == nil
 	if err != nil && !errors.Is(err, ErrNotFound) {
@@ -185,7 +183,7 @@ func (p *postgresTx) SaveUser(user User) error {
 	if err != nil {
 		return err
 	}
-	_, err = p.tx.Exec(p.ctx, `
+	_, err = p.exec(`
 		INSERT INTO users (id, email, email_verified, name, role, active, password_hash, profile, created_at, updated_at)
 		VALUES ($1, lower($2), $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
@@ -212,12 +210,12 @@ func (p *postgresTx) DeleteUser(id string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM oauth_access WHERE user_id = $1`, id); err != nil {
+	if _, err := p.exec(`DELETE FROM oauth_access WHERE user_id = $1`, id); err != nil {
 		p.fail(err)
 		return
 	}
 	p.DeleteUserSessions(id)
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM users WHERE id = $1`, id); err != nil {
+	if _, err := p.exec(`DELETE FROM users WHERE id = $1`, id); err != nil {
 		p.fail(err)
 	}
 }
@@ -230,19 +228,19 @@ func (p *postgresTx) DeleteUserSessions(userID string) {
 		return
 	}
 	p.RevokeAccessTokensForUser(userID)
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM authorization_codes WHERE user_id = $1`, userID); err != nil {
+	if _, err := p.exec(`DELETE FROM authorization_codes WHERE user_id = $1`, userID); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM authz_transactions WHERE user_id = $1`, userID); err != nil {
+	if _, err := p.exec(`DELETE FROM authz_transactions WHERE user_id = $1`, userID); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM consents WHERE user_id = $1`, userID); err != nil {
+	if _, err := p.exec(`DELETE FROM consents WHERE user_id = $1`, userID); err != nil {
 		p.fail(err)
 		return
 	}
-	rows, err := p.tx.Query(p.ctx, `SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL`, userID)
+	rows, err := p.query(`SELECT id FROM sessions WHERE user_id = $1 AND ended_at IS NULL`, userID)
 	if err != nil {
 		p.fail(err)
 		return
@@ -301,19 +299,19 @@ func scanSession(row pgx.Row) (Session, error) {
 // Session returns ErrNotFound for an ended session, matching
 // fileState.Session - callers separately check ExpiresAt themselves.
 func (p *postgresTx) Session(hash string) (Session, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+sessionColumns+` FROM sessions WHERE hash = $1 AND ended_at IS NULL`, hash)
+	row := p.queryRow(`SELECT `+sessionColumns+` FROM sessions WHERE hash = $1 AND ended_at IS NULL`, hash)
 	return scanSession(row)
 }
 
 // SessionByID is not part of the ReadTx interface but is used internally
 // by cascades below that must locate a session by its stable ID.
 func (p *postgresTx) sessionByID(id string) (Session, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+sessionColumns+` FROM sessions WHERE id = $1 ORDER BY ended_at IS NULL DESC LIMIT 1`, id)
+	row := p.queryRow(`SELECT `+sessionColumns+` FROM sessions WHERE id = $1 ORDER BY ended_at IS NULL DESC LIMIT 1`, id)
 	return scanSession(row)
 }
 
 func (p *postgresTx) ListSessions() []Session {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+sessionColumns+` FROM sessions ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + sessionColumns + ` FROM sessions ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -345,7 +343,7 @@ func (p *postgresTx) SaveSession(session Session) {
 	if !session.EndedAt.IsZero() {
 		endedAt = &session.EndedAt
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO sessions (hash, id, user_id, device, csrf, created_at, last_seen_at, auth_time, expires_at, ended_at, end_reason)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (hash) DO UPDATE SET
@@ -364,7 +362,7 @@ func (p *postgresTx) RemoveSessionCredential(hash string) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `DELETE FROM sessions WHERE hash = $1`, hash)
+	_, err := p.exec(`DELETE FROM sessions WHERE hash = $1`, hash)
 	p.fail(err)
 }
 
@@ -398,7 +396,7 @@ func (p *postgresTx) CheckSessionCapacity(kind string) error {
 		return nil
 	}
 	var count int
-	if err := p.tx.QueryRow(p.ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {
+	if err := p.queryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil {
 		return err
 	}
 	if count >= limit {
@@ -415,66 +413,62 @@ func (p *postgresTx) EndSession(id, actor, reason string, now time.Time) {
 	if p.poisoned() {
 		return
 	}
-	rows, err := p.tx.Query(p.ctx, `SELECT hash, user_id FROM sessions WHERE id = $1 AND ended_at IS NULL`, id)
+	rows, err := p.query(`SELECT hash, user_id FROM sessions WHERE id = $1 AND ended_at IS NULL`, id)
 	if err != nil {
 		p.fail(err)
 		return
 	}
 	type liveSession struct{ hash, userID string }
-	var live []liveSession
-	for rows.Next() {
-		var l liveSession
-		if err := rows.Scan(&l.hash, &l.userID); err != nil {
-			rows.Close()
-			p.fail(err)
-			return
-		}
-		live = append(live, l)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	live, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (liveSession, error) {
+		var session liveSession
+		err := row.Scan(&session.hash, &session.userID)
+		return session, err
+	})
+	if err != nil {
 		p.fail(err)
 		return
 	}
 	for _, l := range live {
-		if _, err := p.tx.Exec(p.ctx, `UPDATE sessions SET ended_at = $1, end_reason = $2, csrf = '' WHERE hash = $3`, now, reason, l.hash); err != nil {
+		if _, err := p.exec(`UPDATE sessions SET ended_at = $1, end_reason = $2, csrf = '' WHERE hash = $3`, now, reason, l.hash); err != nil {
 			p.fail(err)
 			return
 		}
 		p.SaveLogoutDelivery(LogoutDelivery{ID: "op-" + id, OPSessionID: id, UserID: l.userID, Actor: actor, Reason: reason, Channel: "local", Status: "ended", CreatedAt: now, UpdatedAt: now})
 
-		appRows, err := p.tx.Query(p.ctx, `SELECT id FROM app_sessions WHERE op_session_id = $1 AND ended_at IS NULL`, id)
-		if err != nil {
-			p.fail(err)
+		p.endSessionGrants(id, actor, reason, now)
+		if p.poisoned() {
 			return
 		}
-		var appIDs []string
-		for appRows.Next() {
-			var appID string
-			if err := appRows.Scan(&appID); err != nil {
-				appRows.Close()
-				p.fail(err)
-				return
-			}
-			appIDs = append(appIDs, appID)
-		}
-		appRows.Close()
-		if err := appRows.Err(); err != nil {
-			p.fail(err)
-			return
-		}
-		for _, appID := range appIDs {
-			p.EndAppSession(appID, actor, reason, now)
-		}
+	}
+}
 
-		if _, err := p.tx.Exec(p.ctx, `UPDATE authz_transactions SET revoked = true WHERE op_session_id = $1`, id); err != nil {
-			p.fail(err)
-			return
-		}
-		if _, err := p.tx.Exec(p.ctx, `UPDATE authorization_codes SET revoked = true WHERE op_session_id = $1`, id); err != nil {
-			p.fail(err)
-			return
-		}
+// endSessionGrants ends linked app sessions and revokes pending grants.
+func (p *postgresTx) endSessionGrants(id, actor, reason string, now time.Time) {
+	if p.poisoned() {
+		return
+	}
+
+	appRows, err := p.query(`SELECT id FROM app_sessions WHERE op_session_id = $1 AND ended_at IS NULL`, id)
+	if err != nil {
+		p.fail(err)
+		return
+	}
+	appIDs, err := pgx.CollectRows(appRows, pgx.RowTo[string])
+	if err != nil {
+		p.fail(err)
+		return
+	}
+	for _, appID := range appIDs {
+		p.EndAppSession(appID, actor, reason, now)
+	}
+
+	if _, err := p.exec(`UPDATE authz_transactions SET revoked = true WHERE op_session_id = $1`, id); err != nil {
+		p.fail(err)
+		return
+	}
+	if _, err := p.exec(`UPDATE authorization_codes SET revoked = true WHERE op_session_id = $1`, id); err != nil {
+		p.fail(err)
+		return
 	}
 }
 
@@ -498,12 +492,12 @@ func scanAppSession(row pgx.Row) (AppSession, error) {
 }
 
 func (p *postgresTx) AppSession(id string) (AppSession, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+appSessionColumns+` FROM app_sessions WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+appSessionColumns+` FROM app_sessions WHERE id = $1`, id)
 	return scanAppSession(row)
 }
 
 func (p *postgresTx) ListAppSessions() []AppSession {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+appSessionColumns+` FROM app_sessions ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + appSessionColumns + ` FROM app_sessions ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -532,7 +526,7 @@ func (p *postgresTx) SaveAppSession(a AppSession) {
 	if !a.EndedAt.IsZero() {
 		endedAt = &a.EndedAt
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO app_sessions (id, op_session_id, client_id, user_id, subject, created_at, last_seen_at, ended_at, end_reason)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
@@ -563,25 +557,25 @@ func (p *postgresTx) EndAppSession(id, actor, reason string, now time.Time) {
 	if !a.EndedAt.IsZero() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE app_sessions SET ended_at = $1, end_reason = $2 WHERE id = $3`, now, reason, id); err != nil {
+	if _, err := p.exec(`UPDATE app_sessions SET ended_at = $1, end_reason = $2 WHERE id = $3`, now, reason, id); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE app_session_id = $1 AND family_id = ''`, id); err != nil {
+	if _, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE app_session_id = $1 AND family_id = ''`, id); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE authorization_codes SET revoked = true WHERE op_session_id = $1 AND client_id = $2`, a.OPSessionID, a.ClientID); err != nil {
+	if _, err := p.exec(`UPDATE authorization_codes SET revoked = true WHERE op_session_id = $1 AND client_id = $2`, a.OPSessionID, a.ClientID); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE authz_transactions SET revoked = true WHERE op_session_id = $1 AND client_id = $2`, a.OPSessionID, a.ClientID); err != nil {
+	if _, err := p.exec(`UPDATE authz_transactions SET revoked = true WHERE op_session_id = $1 AND client_id = $2`, a.OPSessionID, a.ClientID); err != nil {
 		p.fail(err)
 		return
 	}
 
 	var backchannel, frontchannel *string
-	err = p.tx.QueryRow(p.ctx, `
+	err = p.queryRow(`
 		SELECT NULLIF(metadata->>'backchannel_logout_uri', ''), NULLIF(metadata->>'frontchannel_logout_uri', '')
 		FROM clients WHERE id = $1`, a.ClientID).Scan(&backchannel, &frontchannel)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -607,7 +601,7 @@ func (p *postgresTx) EndAppSession(id, actor, reason string, now time.Time) {
 
 func (p *postgresTx) LogoutOperation(id string) (LogoutOperation, error) {
 	var op LogoutOperation
-	err := p.tx.QueryRow(p.ctx, `SELECT id, actor, kind, created_at FROM logout_operations WHERE id = $1`, id).
+	err := p.queryRow(`SELECT id, actor, kind, created_at FROM logout_operations WHERE id = $1`, id).
 		Scan(&op.ID, &op.Actor, &op.Kind, &op.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -615,7 +609,7 @@ func (p *postgresTx) LogoutOperation(id string) (LogoutOperation, error) {
 		}
 		return LogoutOperation{}, err
 	}
-	targetRows, err := p.tx.Query(p.ctx, `SELECT target_id FROM logout_operation_targets WHERE operation_id = $1`, id)
+	targetRows, err := p.query(`SELECT target_id FROM logout_operation_targets WHERE operation_id = $1`, id)
 	if err != nil {
 		return LogoutOperation{}, err
 	}
@@ -638,17 +632,17 @@ func (p *postgresTx) SaveLogoutOperation(op LogoutOperation) {
 		return
 	}
 	var count int
-	if err := p.tx.QueryRow(p.ctx, `SELECT count(*) FROM logout_operations`).Scan(&count); err != nil {
+	if err := p.queryRow(`SELECT count(*) FROM logout_operations`).Scan(&count); err != nil {
 		p.fail(err)
 		return
 	}
 	if count >= 10000 {
-		if _, err := p.tx.Exec(p.ctx, `DELETE FROM logout_operations WHERE id = (SELECT id FROM logout_operations ORDER BY created_at ASC LIMIT 1)`); err != nil {
+		if _, err := p.exec(`DELETE FROM logout_operations WHERE id = (SELECT id FROM logout_operations ORDER BY created_at ASC LIMIT 1)`); err != nil {
 			p.fail(err)
 			return
 		}
 	}
-	if _, err := p.tx.Exec(p.ctx, `
+	if _, err := p.exec(`
 		INSERT INTO logout_operations (id, actor, kind, created_at) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE SET actor = $2, kind = $3, created_at = $4`,
 		op.ID, op.Actor, op.Kind, op.CreatedAt,
@@ -656,12 +650,12 @@ func (p *postgresTx) SaveLogoutOperation(op LogoutOperation) {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM logout_operation_targets WHERE operation_id = $1`, op.ID); err != nil {
+	if _, err := p.exec(`DELETE FROM logout_operation_targets WHERE operation_id = $1`, op.ID); err != nil {
 		p.fail(err)
 		return
 	}
 	for _, target := range op.Targets {
-		if _, err := p.tx.Exec(p.ctx, `INSERT INTO logout_operation_targets (operation_id, target_id) VALUES ($1, $2)`, op.ID, target); err != nil {
+		if _, err := p.exec(`INSERT INTO logout_operation_targets (operation_id, target_id) VALUES ($1, $2)`, op.ID, target); err != nil {
 			p.fail(err)
 			return
 		}
@@ -700,7 +694,7 @@ func scanLogoutDelivery(row pgx.Row) (LogoutDelivery, error) {
 }
 
 func (p *postgresTx) ListLogoutDeliveries() []LogoutDelivery {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+logoutDeliveryColumns+` FROM logout_deliveries ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + logoutDeliveryColumns + ` FROM logout_deliveries ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -741,7 +735,7 @@ func (p *postgresTx) SaveLogoutDelivery(d LogoutDelivery) {
 	if d.HTTPStatus != 0 {
 		httpStatus = &d.HTTPStatus
 	}
-	_, err = p.tx.Exec(p.ctx, `
+	_, err = p.exec(`
 		INSERT INTO logout_deliveries (id, op_session_id, app_session_id, client_id, user_id, subject, actor, reason,
 			channel, status, endpoint, history, created_at, updated_at, next_attempt, lease_until, lease_id, attempts, http_status, error_code)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
@@ -771,7 +765,7 @@ func scanLogoutInteraction(row pgx.Row) (LogoutInteraction, error) {
 }
 
 func (p *postgresTx) LogoutInteraction(id string) (LogoutInteraction, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+logoutInteractionColumns+` FROM logout_interactions WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+logoutInteractionColumns+` FROM logout_interactions WHERE id = $1`, id)
 	return scanLogoutInteraction(row)
 }
 
@@ -779,7 +773,7 @@ func (p *postgresTx) SaveLogoutInteraction(v LogoutInteraction) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO logout_interactions (id, client_id, app_session_id, binding_hash, csrf, op_session_id, user_id, redirect_uri, state, expires_at, completed)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (id) DO UPDATE SET
@@ -804,7 +798,7 @@ func (p *postgresTx) PruneSessions(now time.Time) {
 	if p.poisoned() {
 		return
 	}
-	rows, err := p.tx.Query(p.ctx, `SELECT id FROM sessions WHERE ended_at IS NULL AND expires_at <= $1`, now)
+	rows, err := p.query(`SELECT id FROM sessions WHERE ended_at IS NULL AND expires_at <= $1`, now)
 	if err != nil {
 		p.fail(err)
 		return
@@ -852,7 +846,7 @@ func (p *postgresTx) PruneLogoutState(now time.Time) {
 		{`DELETE FROM sessions WHERE ended_at IS NOT NULL AND ended_at < $1`, []any{cutoff}},
 	}
 	for _, s := range stmts {
-		if _, err := p.tx.Exec(p.ctx, s.sql, s.args...); err != nil {
+		if _, err := p.exec(s.sql, s.args...); err != nil {
 			p.fail(err)
 			return
 		}
@@ -875,7 +869,7 @@ func (p *postgresTx) PruneOIDCState(now time.Time) {
 		`DELETE FROM access_tokens WHERE expires_at <= $1`,
 	}
 	for _, s := range stmts {
-		if _, err := p.tx.Exec(p.ctx, s, now); err != nil {
+		if _, err := p.exec(s, now); err != nil {
 			p.fail(err)
 			return
 		}
@@ -903,12 +897,12 @@ func scanAccessToken(row pgx.Row) (AccessToken, error) {
 }
 
 func (p *postgresTx) AccessToken(hash string) (AccessToken, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+accessTokenColumns+` FROM access_tokens WHERE hash = $1`, hash)
+	row := p.queryRow(`SELECT `+accessTokenColumns+` FROM access_tokens WHERE hash = $1`, hash)
 	return scanAccessToken(row)
 }
 
 func (p *postgresTx) ListAccessTokens() []AccessToken {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+accessTokenColumns+` FROM access_tokens ORDER BY issued_at`)
+	rows, err := p.query(`SELECT ` + accessTokenColumns + ` FROM access_tokens ORDER BY issued_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -937,7 +931,7 @@ func (p *postgresTx) SaveAccessToken(a AccessToken) {
 	if !a.IDTokenExpiresAt.IsZero() {
 		idTokenExp = &a.IDTokenExpiresAt
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO access_tokens (hash, client_id, user_id, audience, scopes, grant_type, subject_kind, family_id,
 			original_grant, code_hash, op_session_id, app_session_id, id_token_expires_at, issued_at, expires_at, revoked)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
@@ -955,7 +949,7 @@ func (p *postgresTx) RevokeAccessToken(hash string) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE hash = $1`, hash)
+	_, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE hash = $1`, hash)
 	p.fail(err)
 }
 
@@ -967,7 +961,7 @@ func (p *postgresTx) RevokeAccessTokensForUser(userID string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE user_id = $1`, userID); err != nil {
+	if _, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE user_id = $1`, userID); err != nil {
 		p.fail(err)
 	}
 }
@@ -980,7 +974,7 @@ func (p *postgresTx) RevokeAccessTokensForClient(clientID string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE client_id = $1`, clientID); err != nil {
+	if _, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE client_id = $1`, clientID); err != nil {
 		p.fail(err)
 	}
 }
@@ -993,7 +987,7 @@ func (p *postgresTx) RevokeAccessTokensForCode(codeHash string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE code_hash = $1`, codeHash); err != nil {
+	if _, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE code_hash = $1`, codeHash); err != nil {
 		p.fail(err)
 	}
 }
@@ -1003,7 +997,7 @@ func (p *postgresTx) RevokeAccessTokensForCode(codeHash string) {
 // access-token cascade also runs (matching fileState's per-family call to
 // RevokeRefreshFamily rather than a single bulk UPDATE).
 func (p *postgresTx) revokeFamiliesMatching(where string, args ...any) {
-	rows, err := p.tx.Query(p.ctx, `SELECT id FROM refresh_families WHERE `+where+` AND NOT revoked`, args...)
+	rows, err := p.query(`SELECT id FROM refresh_families WHERE `+where+` AND NOT revoked`, args...)
 	if err != nil {
 		p.fail(err)
 		return
@@ -1061,12 +1055,12 @@ func scanClient(row pgx.Row) (ClientRecord, error) {
 }
 
 func (p *postgresTx) Client(id string) (ClientRecord, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+clientColumns+` FROM clients WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+clientColumns+` FROM clients WHERE id = $1`, id)
 	return scanClient(row)
 }
 
 func (p *postgresTx) Clients() []ClientRecord {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+clientColumns+` FROM clients ORDER BY issued_at`)
+	rows, err := p.query(`SELECT ` + clientColumns + ` FROM clients ORDER BY issued_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1110,7 +1104,7 @@ func (p *postgresTx) SaveClient(c ClientRecord) {
 		p.fail(err)
 		return
 	}
-	_, err = p.tx.Exec(p.ctx, `
+	_, err = p.exec(`
 		INSERT INTO clients (id, origin, initial_token_id, metadata, secret, issued_at, updated_at, updated_at_ns)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET
@@ -1130,7 +1124,7 @@ func (p *postgresTx) DeleteClient(id string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM oauth_policies WHERE client_id = $1`, id); err != nil {
+	if _, err := p.exec(`DELETE FROM oauth_policies WHERE client_id = $1`, id); err != nil {
 		p.fail(err)
 		return
 	}
@@ -1139,7 +1133,7 @@ func (p *postgresTx) DeleteClient(id string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM clients WHERE id = $1`, id); err != nil {
+	if _, err := p.exec(`DELETE FROM clients WHERE id = $1`, id); err != nil {
 		p.fail(err)
 	}
 }
@@ -1152,7 +1146,7 @@ func (p *postgresTx) invalidateClientGrants(clientID string) {
 	if p.poisoned() {
 		return
 	}
-	rows, err := p.tx.Query(p.ctx, `SELECT id FROM app_sessions WHERE client_id = $1 AND ended_at IS NULL`, clientID)
+	rows, err := p.query(`SELECT id FROM app_sessions WHERE client_id = $1 AND ended_at IS NULL`, clientID)
 	if err != nil {
 		p.fail(err)
 		return
@@ -1186,7 +1180,7 @@ func (p *postgresTx) invalidateClientGrants(clientID string) {
 		`DELETE FROM consents WHERE client_id = $1`,
 	}
 	for _, s := range stmts {
-		if _, err := p.tx.Exec(p.ctx, s, clientID); err != nil {
+		if _, err := p.exec(s, clientID); err != nil {
 			p.fail(err)
 			return
 		}
@@ -1202,7 +1196,7 @@ func (p *postgresTx) invalidateClientGrants(clientID string) {
 func (p *postgresTx) OAuthPolicy(id string) OAuthPolicy {
 	var policy OAuthPolicy
 	var resources []byte
-	err := p.tx.QueryRow(p.ctx, `
+	err := p.queryRow(`
 		SELECT grants, resources, default_resource, introspection_enabled, introspection_audiences, refresh_inspection, refresh_enabled, password_enabled
 		FROM oauth_policies WHERE client_id = $1`, id).
 		Scan(&policy.Grants, &resources, &policy.DefaultResource, &policy.IntrospectionEnabled, &policy.IntrospectionAudiences, &policy.RefreshInspection, &policy.RefreshEnabled, &policy.PasswordEnabled)
@@ -1233,7 +1227,7 @@ func (p *postgresTx) SaveOAuthPolicy(id string, policy OAuthPolicy) {
 		p.fail(err)
 		return
 	}
-	_, err = p.tx.Exec(p.ctx, `
+	_, err = p.exec(`
 		INSERT INTO oauth_policies (client_id, grants, resources, default_resource, introspection_enabled, introspection_audiences, refresh_inspection, refresh_enabled, password_enabled)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		ON CONFLICT (client_id) DO UPDATE SET
@@ -1249,7 +1243,7 @@ func (p *postgresTx) SaveOAuthPolicy(id string, policy OAuthPolicy) {
 }
 
 func (p *postgresTx) OAuthAccess(id string) OAuthAccess {
-	rows, err := p.tx.Query(p.ctx, `SELECT audience, scopes FROM oauth_access WHERE user_id = $1`, id)
+	rows, err := p.query(`SELECT audience, scopes FROM oauth_access WHERE user_id = $1`, id)
 	if err != nil {
 		p.fail(err)
 		return OAuthAccess{}
@@ -1279,17 +1273,17 @@ func (p *postgresTx) SaveOAuthAccess(id string, access OAuthAccess) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `DELETE FROM oauth_access WHERE user_id = $1`, id); err != nil {
+	if _, err := p.exec(`DELETE FROM oauth_access WHERE user_id = $1`, id); err != nil {
 		p.fail(err)
 		return
 	}
 	for audience, scopes := range access {
-		if _, err := p.tx.Exec(p.ctx, `INSERT INTO oauth_access (user_id, audience, scopes) VALUES ($1, $2, $3)`, id, audience, nzs(scopes)); err != nil {
+		if _, err := p.exec(`INSERT INTO oauth_access (user_id, audience, scopes) VALUES ($1, $2, $3)`, id, audience, nzs(scopes)); err != nil {
 			p.fail(err)
 			return
 		}
 	}
-	rows, err := p.tx.Query(p.ctx, `SELECT id FROM app_sessions WHERE user_id = $1 AND ended_at IS NULL`, id)
+	rows, err := p.query(`SELECT id FROM app_sessions WHERE user_id = $1 AND ended_at IS NULL`, id)
 	if err != nil {
 		p.fail(err)
 		return
@@ -1333,12 +1327,12 @@ func scanRefreshFamily(row pgx.Row) (RefreshFamily, error) {
 }
 
 func (p *postgresTx) RefreshFamily(id string) (RefreshFamily, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+refreshFamilyColumns+` FROM refresh_families WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+refreshFamilyColumns+` FROM refresh_families WHERE id = $1`, id)
 	return scanRefreshFamily(row)
 }
 
 func (p *postgresTx) ListRefreshFamilies() []RefreshFamily {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+refreshFamilyColumns+` FROM refresh_families ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + refreshFamilyColumns + ` FROM refresh_families ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1363,7 +1357,7 @@ func (p *postgresTx) SaveRefreshFamily(f RefreshFamily) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO refresh_families (id, app_session_id, op_session_id, client_id, user_id, code_hash, audience, scopes,
 			auth_time, client_revision, created_at, absolute_expiry, idle_expiry, retain_until, revoked)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
@@ -1383,18 +1377,18 @@ func (p *postgresTx) RevokeRefreshFamily(id string) {
 	if p.poisoned() {
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE refresh_families SET revoked = true WHERE id = $1`, id); err != nil {
+	if _, err := p.exec(`UPDATE refresh_families SET revoked = true WHERE id = $1`, id); err != nil {
 		p.fail(err)
 		return
 	}
-	if _, err := p.tx.Exec(p.ctx, `UPDATE access_tokens SET revoked = true WHERE family_id = $1`, id); err != nil {
+	if _, err := p.exec(`UPDATE access_tokens SET revoked = true WHERE family_id = $1`, id); err != nil {
 		p.fail(err)
 	}
 }
 
 func (p *postgresTx) RefreshToken(hash string) (RefreshToken, error) {
 	var t RefreshToken
-	err := p.tx.QueryRow(p.ctx, `SELECT hash, family_id, scopes, issued_at, consumed FROM refresh_tokens WHERE hash = $1`, hash).
+	err := p.queryRow(`SELECT hash, family_id, scopes, issued_at, consumed FROM refresh_tokens WHERE hash = $1`, hash).
 		Scan(&t.Hash, &t.FamilyID, &t.Scopes, &t.IssuedAt, &t.Consumed)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1406,7 +1400,7 @@ func (p *postgresTx) RefreshToken(hash string) (RefreshToken, error) {
 }
 
 func (p *postgresTx) ListRefreshTokens() []RefreshToken {
-	rows, err := p.tx.Query(p.ctx, `SELECT hash, family_id, scopes, issued_at, consumed FROM refresh_tokens ORDER BY issued_at`)
+	rows, err := p.query(`SELECT hash, family_id, scopes, issued_at, consumed FROM refresh_tokens ORDER BY issued_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1438,7 +1432,7 @@ func (p *postgresTx) SaveRefreshToken(t RefreshToken) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO refresh_tokens (hash, family_id, scopes, issued_at, consumed) VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (hash) DO UPDATE SET family_id=$2, scopes=$3, consumed=$5`,
 		t.Hash, t.FamilyID, nzs(t.Scopes), t.IssuedAt, t.Consumed,
@@ -1450,7 +1444,7 @@ func (p *postgresTx) SaveRefreshToken(t RefreshToken) {
 
 func (p *postgresTx) InitialToken(hash string) (InitialAccessToken, error) {
 	var t InitialAccessToken
-	err := p.tx.QueryRow(p.ctx, `SELECT hash, id, label, issued_by, issued_at, expires_at, max_uses, uses, revoked FROM initial_access_tokens WHERE hash = $1`, hash).
+	err := p.queryRow(`SELECT hash, id, label, issued_by, issued_at, expires_at, max_uses, uses, revoked FROM initial_access_tokens WHERE hash = $1`, hash).
 		Scan(&t.Hash, &t.ID, &t.Label, &t.IssuedBy, &t.IssuedAt, &t.ExpiresAt, &t.MaxUses, &t.Uses, &t.Revoked)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1462,7 +1456,7 @@ func (p *postgresTx) InitialToken(hash string) (InitialAccessToken, error) {
 }
 
 func (p *postgresTx) InitialTokens() []InitialAccessToken {
-	rows, err := p.tx.Query(p.ctx, `SELECT hash, id, label, issued_by, issued_at, expires_at, max_uses, uses, revoked FROM initial_access_tokens ORDER BY issued_at`)
+	rows, err := p.query(`SELECT hash, id, label, issued_by, issued_at, expires_at, max_uses, uses, revoked FROM initial_access_tokens ORDER BY issued_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1493,7 +1487,7 @@ func (p *postgresTx) SaveInitialToken(t InitialAccessToken) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO initial_access_tokens (hash, id, label, issued_by, issued_at, expires_at, max_uses, uses, revoked)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		ON CONFLICT (hash) DO UPDATE SET
@@ -1505,7 +1499,7 @@ func (p *postgresTx) SaveInitialToken(t InitialAccessToken) {
 
 func (p *postgresTx) RegistrationToken(clientID string) (RegistrationAccessToken, error) {
 	var t RegistrationAccessToken
-	err := p.tx.QueryRow(p.ctx, `SELECT hash, client_id, issued_at FROM registration_access_tokens WHERE client_id = $1`, clientID).
+	err := p.queryRow(`SELECT hash, client_id, issued_at FROM registration_access_tokens WHERE client_id = $1`, clientID).
 		Scan(&t.Hash, &t.ClientID, &t.IssuedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1524,7 +1518,7 @@ func (p *postgresTx) SaveRegistrationToken(t RegistrationAccessToken) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO registration_access_tokens (client_id, hash, issued_at) VALUES ($1,$2,$3)
 		ON CONFLICT (client_id) DO UPDATE SET hash=$2, issued_at=$3`,
 		t.ClientID, t.Hash, t.IssuedAt,
@@ -1536,7 +1530,7 @@ func (p *postgresTx) DeleteRegistrationToken(clientID string) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `DELETE FROM registration_access_tokens WHERE client_id = $1`, clientID)
+	_, err := p.exec(`DELETE FROM registration_access_tokens WHERE client_id = $1`, clientID)
 	p.fail(err)
 }
 
@@ -1567,12 +1561,12 @@ func scanAuthzTransaction(row pgx.Row) (AuthzTransaction, error) {
 }
 
 func (p *postgresTx) AuthzTransaction(id string) (AuthzTransaction, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+authzTransactionColumns+` FROM authz_transactions WHERE id = $1`, id)
+	row := p.queryRow(`SELECT `+authzTransactionColumns+` FROM authz_transactions WHERE id = $1`, id)
 	return scanAuthzTransaction(row)
 }
 
 func (p *postgresTx) ListAuthzTransactions() []AuthzTransaction {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+authzTransactionColumns+` FROM authz_transactions ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + authzTransactionColumns + ` FROM authz_transactions ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1601,7 +1595,7 @@ func (p *postgresTx) SaveAuthzTransaction(t AuthzTransaction) {
 	if !t.ReauthenticateAfter.IsZero() {
 		reauthAfter = &t.ReauthenticateAfter
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO authz_transactions (id, client_id, redirect_uri, scopes, state, response_mode, nonce, code_challenge,
 			code_challenge_method, prompt, max_age, login_hint, browser_binding_hash, op_session_id, app_session_id,
 			user_id, auth_time, client_updated_at_ns, reauthenticate_after, consent_granted, revoked, consumed, expires_at, created_at)
@@ -1622,7 +1616,7 @@ func (p *postgresTx) DeleteAuthzTransaction(id string) {
 	if p.poisoned() {
 		return
 	}
-	_, err := p.tx.Exec(p.ctx, `DELETE FROM authz_transactions WHERE id = $1`, id)
+	_, err := p.exec(`DELETE FROM authz_transactions WHERE id = $1`, id)
 	p.fail(err)
 }
 
@@ -1653,12 +1647,12 @@ func scanAuthorizationCode(row pgx.Row) (AuthorizationCode, error) {
 }
 
 func (p *postgresTx) AuthorizationCode(hash string) (AuthorizationCode, error) {
-	row := p.tx.QueryRow(p.ctx, `SELECT `+authorizationCodeColumns+` FROM authorization_codes WHERE hash = $1`, hash)
+	row := p.queryRow(`SELECT `+authorizationCodeColumns+` FROM authorization_codes WHERE hash = $1`, hash)
 	return scanAuthorizationCode(row)
 }
 
 func (p *postgresTx) ListAuthorizationCodes() []AuthorizationCode {
-	rows, err := p.tx.Query(p.ctx, `SELECT `+authorizationCodeColumns+` FROM authorization_codes ORDER BY created_at`)
+	rows, err := p.query(`SELECT ` + authorizationCodeColumns + ` FROM authorization_codes ORDER BY created_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1690,7 +1684,7 @@ func (p *postgresTx) SaveAuthorizationCode(c AuthorizationCode) {
 	if !c.RetainUntil.IsZero() {
 		retainUntil = &c.RetainUntil
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO authorization_codes (hash, transaction_id, client_id, user_id, redirect_uri, scopes, nonce,
 			auth_time, code_challenge, code_challenge_method, client_updated_at_ns, op_session_id, app_session_id,
 			revoked, consumed, created_at, expires_at, retain_until)
@@ -1710,7 +1704,7 @@ func (p *postgresTx) SaveAuthorizationCode(c AuthorizationCode) {
 
 func (p *postgresTx) Consent(userID, clientID string) (Consent, error) {
 	var c Consent
-	err := p.tx.QueryRow(p.ctx, `SELECT user_id, client_id, scopes, policy_revision, granted_at, revoked FROM consents WHERE user_id = $1 AND client_id = $2`, userID, clientID).
+	err := p.queryRow(`SELECT user_id, client_id, scopes, policy_revision, granted_at, revoked FROM consents WHERE user_id = $1 AND client_id = $2`, userID, clientID).
 		Scan(&c.UserID, &c.ClientID, &c.Scopes, &c.PolicyRevision, &c.GrantedAt, &c.Revoked)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1723,7 +1717,7 @@ func (p *postgresTx) Consent(userID, clientID string) (Consent, error) {
 }
 
 func (p *postgresTx) ListConsents() []Consent {
-	rows, err := p.tx.Query(p.ctx, `SELECT user_id, client_id, scopes, policy_revision, granted_at, revoked FROM consents ORDER BY granted_at`)
+	rows, err := p.query(`SELECT user_id, client_id, scopes, policy_revision, granted_at, revoked FROM consents ORDER BY granted_at`)
 	if err != nil {
 		p.fail(err)
 		return nil
@@ -1753,23 +1747,13 @@ func (p *postgresTx) SaveConsent(c Consent) {
 		return
 	}
 	if c.Revoked {
-		rows, err := p.tx.Query(p.ctx, `SELECT id FROM app_sessions WHERE user_id = $1 AND client_id = $2 AND ended_at IS NULL`, c.UserID, c.ClientID)
+		rows, err := p.query(`SELECT id FROM app_sessions WHERE user_id = $1 AND client_id = $2 AND ended_at IS NULL`, c.UserID, c.ClientID)
 		if err != nil {
 			p.fail(err)
 			return
 		}
-		var appIDs []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				p.fail(err)
-				return
-			}
-			appIDs = append(appIDs, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		appIDs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
 			p.fail(err)
 			return
 		}
@@ -1785,7 +1769,7 @@ func (p *postgresTx) SaveConsent(c Consent) {
 			return
 		}
 	}
-	_, err := p.tx.Exec(p.ctx, `
+	_, err := p.exec(`
 		INSERT INTO consents (user_id, client_id, scopes, policy_revision, granted_at, revoked)
 		VALUES ($1,$2,$3,$4,$5,$6)
 		ON CONFLICT (user_id, client_id) DO UPDATE SET scopes=$3, policy_revision=$4, granted_at=$5, revoked=$6`,
