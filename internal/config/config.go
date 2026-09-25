@@ -34,7 +34,27 @@ type OAuthConfig struct {
 }
 
 type StorageConfig struct {
-	DataDir string `mapstructure:"dataDir" yaml:"dataDir"`
+	Backend  string         `mapstructure:"backend" yaml:"backend"`
+	DataDir  string         `mapstructure:"dataDir" yaml:"dataDir"`
+	Postgres PostgresConfig `mapstructure:"postgres" yaml:"postgres"`
+	MongoDB  MongoDBConfig  `mapstructure:"mongodb" yaml:"mongodb"`
+}
+type PostgresConfig struct {
+	DSN              string        `mapstructure:"dsn" yaml:"dsn"`
+	MaxOpenConns     int           `mapstructure:"maxOpenConns" yaml:"maxOpenConns"`
+	MaxIdleConns     int           `mapstructure:"maxIdleConns" yaml:"maxIdleConns"`
+	ConnMaxLifetime  time.Duration `mapstructure:"connMaxLifetime" yaml:"connMaxLifetime"`
+	ConnectTimeout   time.Duration `mapstructure:"connectTimeout" yaml:"connectTimeout"`
+	StatementTimeout time.Duration `mapstructure:"statementTimeout" yaml:"statementTimeout"`
+	// SSLMode is passed through to the DSN's sslmode parameter when set,
+	// and is required to be a non-disabling mode outside development/test.
+	SSLMode string `mapstructure:"sslMode" yaml:"sslMode"`
+}
+type MongoDBConfig struct {
+	URI                    string        `mapstructure:"uri" yaml:"uri"`
+	Database               string        `mapstructure:"database" yaml:"database"`
+	ConnectTimeout         time.Duration `mapstructure:"connectTimeout" yaml:"connectTimeout"`
+	ServerSelectionTimeout time.Duration `mapstructure:"serverSelectionTimeout" yaml:"serverSelectionTimeout"`
 }
 type AuthConfig struct {
 	SessionTTL   time.Duration `mapstructure:"sessionTTL" yaml:"sessionTTL"`
@@ -88,7 +108,7 @@ type OIDCConfig struct {
 
 func Default() Config {
 	return Config{
-		Storage: StorageConfig{DataDir: "data"},
+		Storage: StorageConfig{Backend: "json", DataDir: "data", Postgres: PostgresConfig{MaxOpenConns: 20, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute, ConnectTimeout: 5 * time.Second, StatementTimeout: 10 * time.Second, SSLMode: "verify-full"}, MongoDB: MongoDBConfig{Database: "opened_connect_server", ConnectTimeout: 5 * time.Second, ServerSelectionTimeout: 5 * time.Second}},
 		Auth:    AuthConfig{SessionTTL: 8 * time.Hour},
 		App: AppConfig{
 			Name:        "OpenID Connect Server",
@@ -141,6 +161,16 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("oauth.refreshTokensEnabled", false)
 	v.SetDefault("oauth.resources", []identity.Resource{})
 	v.SetDefault("storage.dataDir", defaults.Storage.DataDir)
+	v.SetDefault("storage.backend", defaults.Storage.Backend)
+	v.SetDefault("storage.postgres.maxOpenConns", defaults.Storage.Postgres.MaxOpenConns)
+	v.SetDefault("storage.postgres.maxIdleConns", defaults.Storage.Postgres.MaxIdleConns)
+	v.SetDefault("storage.postgres.connMaxLifetime", defaults.Storage.Postgres.ConnMaxLifetime)
+	v.SetDefault("storage.postgres.connectTimeout", defaults.Storage.Postgres.ConnectTimeout)
+	v.SetDefault("storage.postgres.statementTimeout", defaults.Storage.Postgres.StatementTimeout)
+	v.SetDefault("storage.postgres.sslMode", defaults.Storage.Postgres.SSLMode)
+	v.SetDefault("storage.mongodb.database", defaults.Storage.MongoDB.Database)
+	v.SetDefault("storage.mongodb.connectTimeout", defaults.Storage.MongoDB.ConnectTimeout)
+	v.SetDefault("storage.mongodb.serverSelectionTimeout", defaults.Storage.MongoDB.ServerSelectionTimeout)
 	v.SetDefault("auth.sessionTTL", defaults.Auth.SessionTTL)
 	v.SetDefault("auth.cookieSecure", defaults.Auth.CookieSecure)
 
@@ -185,6 +215,26 @@ func Load(v *viper.Viper) (Config, error) {
 	}
 	if cfg.Storage.DataDir == "" {
 		return Config{}, fmt.Errorf("storage.dataDir is required")
+	}
+	switch cfg.Storage.Backend {
+	case "json":
+	case "postgres":
+		if strings.TrimSpace(cfg.Storage.Postgres.DSN) == "" || cfg.Storage.Postgres.MaxOpenConns < 1 || cfg.Storage.Postgres.MaxIdleConns < 0 || cfg.Storage.Postgres.MaxIdleConns > cfg.Storage.Postgres.MaxOpenConns || cfg.Storage.Postgres.ConnMaxLifetime <= 0 || cfg.Storage.Postgres.ConnectTimeout <= 0 || cfg.Storage.Postgres.StatementTimeout <= 0 {
+			return Config{}, fmt.Errorf("storage.postgres requires dsn, valid pool limits, and positive timeouts")
+		}
+		if cfg.App.Env != "development" && cfg.App.Env != "test" {
+			switch cfg.Storage.Postgres.SSLMode {
+			case "require", "verify-ca", "verify-full":
+			default:
+				return Config{}, fmt.Errorf("storage.postgres.sslMode must be require, verify-ca, or verify-full outside development")
+			}
+		}
+	case "mongodb":
+		if strings.TrimSpace(cfg.Storage.MongoDB.URI) == "" || strings.TrimSpace(cfg.Storage.MongoDB.Database) == "" || cfg.Storage.MongoDB.ConnectTimeout <= 0 || cfg.Storage.MongoDB.ServerSelectionTimeout <= 0 {
+			return Config{}, fmt.Errorf("storage.mongodb requires uri, database, and positive timeouts")
+		}
+	default:
+		return Config{}, fmt.Errorf("storage.backend must be json, postgres, or mongodb")
 	}
 	if cfg.Auth.SessionTTL < time.Minute || cfg.Auth.SessionTTL > 30*24*time.Hour {
 		return Config{}, fmt.Errorf("auth.sessionTTL must be between 1m and 720h")
@@ -383,7 +433,31 @@ logging:
   format: text
 
 storage:
+  backend: json # json, postgres, or mongodb
   dataDir: data
+
+# For database backends, configure credentials through APP_STORAGE_POSTGRES_DSN
+# or APP_STORAGE_MONGODB_URI rather than committing them to this file.
+# storage:
+#   backend: postgres
+#   dataDir: data # still required: signing keys and the client-secret encryption key live here
+#   postgres:
+#     dsn: ${APP_STORAGE_POSTGRES_DSN}
+#     maxOpenConns: 20
+#     maxIdleConns: 5
+#     connMaxLifetime: 30m
+#     connectTimeout: 5s
+#     statementTimeout: 10s
+#     sslMode: verify-full # overrides the DSN sslmode; require, verify-ca, or verify-full outside development/test
+#
+# storage:
+#   backend: mongodb
+#   dataDir: data
+#   mongodb:
+#     uri: ${APP_STORAGE_MONGODB_URI}
+#     database: opened_connect_server
+#     connectTimeout: 5s
+#     serverSelectionTimeout: 5s # requires a transaction-capable replica set or sharded cluster
 
 auth:
   sessionTTL: 8h
