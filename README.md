@@ -153,6 +153,17 @@ There are no default accounts or passwords. Initialize the first administrator b
 
 The command prompts for a password without echoing it, then asks for confirmation. Passwords must contain 12–128 characters. For automation, pass `--password-stdin` and supply the password through stdin from a secret manager. Passwords are never accepted as command-line flags or printed. `--path` selects the project directory; `--data-dir` overrides the storage location on both `init` and `serve`.
 
+For a new project, initialization can also write the first OIDC and OAuth settings:
+
+```sh
+./build/opened-connect-server init --admin-email admin@example.com \
+  --registration-enabled --refresh-tokens-enabled \
+  --audience https://api.example.com \
+  --audience-scope items:read --audience-scope items:write
+```
+
+These flags enable OIDC when needed and write the chosen values to the generated `config.yaml`. `--password-grant-enabled` enables the legacy password grant. An audience requires one or more `--audience-scope` values because a resource without permitted scopes is invalid. To change an existing configuration, edit `config.yaml` directly; initialization refuses to silently overwrite it.
+
 Initialization refuses to modify any existing user store, even with `--force`. The force flag only applies to generated configuration files. Use the Users screen for subsequent accounts. Searches run only when submitted, with role/status filters and 10 results per page. Clicking a user opens a detail screen for editing attributes, role changes, disabling, and confirmed deletion. Returning to search preserves the filters, current page, and results without another request. Add user opens a separate creation screen; saving opens the new user’s detail, and Back returns to search. The last active administrator cannot be demoted, disabled, or deleted.
 
 ## Authentication and authorization

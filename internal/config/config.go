@@ -7,6 +7,7 @@ import (
 
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -323,12 +324,36 @@ func Load(v *viper.Viper) (Config, error) {
 }
 
 func InitProject(dir string, force bool) error {
+	return InitProjectWithOptions(dir, force, InitProjectOptions{})
+}
+
+// InitProjectOptions contains the protocol settings that can be selected by
+// the initialization command. Nil booleans leave the generated example at
+// its documented defaults; a configured OAuth resource is always enabled.
+type InitProjectOptions struct {
+	RegistrationEnabled  *bool
+	RefreshTokensEnabled *bool
+	PasswordGrantEnabled *bool
+	Resources            []identity.Resource
+}
+
+func (o InitProjectOptions) HasSelections() bool {
+	return o.RegistrationEnabled != nil || o.RefreshTokensEnabled != nil || o.PasswordGrantEnabled != nil || len(o.Resources) > 0
+}
+
+func (o InitProjectOptions) EnablesOIDC() bool {
+	return (o.RegistrationEnabled != nil && *o.RegistrationEnabled) ||
+		(o.RefreshTokensEnabled != nil && *o.RefreshTokensEnabled) ||
+		(o.PasswordGrantEnabled != nil && *o.PasswordGrantEnabled) || len(o.Resources) > 0
+}
+
+func InitProjectWithOptions(dir string, force bool, options InitProjectOptions) error {
 	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o700); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
 	files := map[string]string{
-		filepath.Join(dir, "config.yaml"):  DefaultConfigYAML,
+		filepath.Join(dir, "config.yaml"):  defaultConfigYAMLWithOptions(options),
 		filepath.Join(dir, ".env.example"): DefaultEnvExample,
 		filepath.Join(dir, ".env"):         DefaultEnvExample,
 	}
@@ -352,6 +377,36 @@ func InitProject(dir string, force bool) error {
 	}
 
 	return nil
+}
+
+func defaultConfigYAMLWithOptions(options InitProjectOptions) string {
+	if options.RegistrationEnabled == nil && options.RefreshTokensEnabled == nil && options.PasswordGrantEnabled == nil && len(options.Resources) == 0 {
+		return DefaultConfigYAML
+	}
+	registration, refresh, password := false, false, false
+	if options.RegistrationEnabled != nil {
+		registration = *options.RegistrationEnabled
+	}
+	if options.RefreshTokensEnabled != nil {
+		refresh = *options.RefreshTokensEnabled
+	}
+	if options.PasswordGrantEnabled != nil {
+		password = *options.PasswordGrantEnabled
+	}
+	oidc := fmt.Sprintf("oidc:\n  enabled: %t\n  registrationEnabled: %t # token-protected dynamic client registration\n", options.EnablesOIDC(), registration)
+	oauth := fmt.Sprintf("oauth:\n  refreshTokensEnabled: %t\n  passwordGrantEnabled: %t # legacy; contrary to OAuth security BCP\n", refresh, password)
+	if len(options.Resources) > 0 {
+		oauth += "  resources:\n"
+	}
+	for _, resource := range options.Resources {
+		scopes := make([]string, 0, len(resource.Scopes))
+		for _, scope := range resource.Scopes {
+			scopes = append(scopes, strconv.Quote(scope))
+		}
+		oauth += fmt.Sprintf("    - audience: %s\n      enabled: %t\n      scopes: [%s]\n", strconv.Quote(resource.Audience), resource.Enabled, strings.Join(scopes, ", "))
+	}
+	start := "# oidc:\n#   enabled: false\n#   registrationEnabled: false # token-protected dynamic client registration\n#   issuer: https://identity.example.com # defaults to app.url when unset\n#   logoutAllowedCIDRs: [] # optional trusted internal RP networks; never use an unrestricted range\n#   allowedOrigins: [] # exact browser client origins, e.g. [https://app.example.com]\n#   transactionTTL: 10m\n#   codeTTL: 60s\n#   accessTokenTTL: 10m\n#   idTokenTTL: 5m\n#   refreshMaxTTL: 720h\n#   refreshInactivityTTL: 168h\n#   keyRotationInterval: 2160h # 90 days\n#   keyOverlapPeriod: 720h # 30 days\n\n# oauth:\n#   refreshTokensEnabled: false\n#   passwordGrantEnabled: false # legacy; contrary to OAuth security BCP\n#   resources:\n#     - audience: https://api.example.com\n#       enabled: true\n#       scopes: [items:read, items:write]\n"
+	return strings.Replace(DefaultConfigYAML, start, oidc+"\n"+oauth, 1)
 }
 
 func fileExists(path string) bool {
