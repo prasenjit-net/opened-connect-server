@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 // startTransaction drives /authorize far enough to persist an

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 type Handler struct {

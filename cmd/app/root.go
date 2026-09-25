@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
 )
 
 var (
@@ -19,7 +19,7 @@ var (
 	dataDir string
 	uiFS    fs.FS
 	rootCmd = &cobra.Command{
-		Use:   "opened-connect-server",
+		Use:   "openid-connect-server",
 		Short: "OpenID Connect Server with an embedded administration console",
 		Long:  "Run OpenID Connect Server and its administration console from a single binary.",
 	}

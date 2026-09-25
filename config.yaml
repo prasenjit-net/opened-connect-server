@@ -25,7 +25,7 @@ auth:
 
 ui:
   defaultTheme: auto
-  repoURL: https://github.com/prasenjit-net/opened-connect-server
+  repoURL: https://github.com/prasenjit-net/openid-connect-server
   devProxyURL: http://localhost:5173
 
 oidc:

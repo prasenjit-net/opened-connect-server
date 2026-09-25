@@ -17,11 +17,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/api"
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
-	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/api"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/oidc"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 type Options struct {

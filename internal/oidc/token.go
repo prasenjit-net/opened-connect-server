@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 var errInvalidGrant = errors.New("invalid or expired authorization code")

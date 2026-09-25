@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 func bearerToken(r *http.Request) string {

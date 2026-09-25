@@ -42,7 +42,7 @@ describe("ThemeContext", () => {
   });
 
   it("prefers a previously saved choice over the server default", () => {
-    window.localStorage.setItem("opened-connect-server-theme", "light");
+    window.localStorage.setItem("openid-connect-server-theme", "light");
     defaultTheme = "dark";
     renderTheme();
     expect(screen.getByTestId("mode")).toHaveTextContent("light");
@@ -55,11 +55,11 @@ describe("ThemeContext", () => {
     await user.click(screen.getByText("set-dark"));
     expect(screen.getByTestId("mode")).toHaveTextContent("dark");
     expect(screen.getByTestId("resolved")).toHaveTextContent("dark");
-    expect(window.localStorage.getItem("opened-connect-server-theme")).toBe("dark");
+    expect(window.localStorage.getItem("openid-connect-server-theme")).toBe("dark");
 
     await user.click(screen.getByText("set-light"));
     expect(screen.getByTestId("resolved")).toHaveTextContent("light");
-    expect(window.localStorage.getItem("opened-connect-server-theme")).toBe("light");
+    expect(window.localStorage.getItem("openid-connect-server-theme")).toBe("light");
   });
 
   it("stamps the resolved theme onto <html data-theme>", async () => {

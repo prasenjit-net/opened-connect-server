@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 // ProjectUserInfo builds a dedicated claims projection for /userinfo. It

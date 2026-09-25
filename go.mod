@@ -1,4 +1,4 @@
-module github.com/prasenjit-net/opened-connect-server
+module github.com/prasenjit-net/openid-connect-server
 
 go 1.24.0
 

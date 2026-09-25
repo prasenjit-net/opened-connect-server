@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 var supportedPrompts = []string{"none", "login", "consent", "select_account"}

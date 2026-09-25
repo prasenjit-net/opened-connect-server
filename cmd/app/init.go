@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
-	"github.com/prasenjit-net/opened-connect-server/internal/oidc"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/oidc"
 )
 
 var (
@@ -161,7 +161,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err = config.InitProjectWithOptions(abs, initForce, options); err != nil {
 		return fmt.Errorf("initialization succeeded, but config initialization failed: %w", err)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Start the server with: opened-connect-server serve")
+	fmt.Fprintln(cmd.OutOrStdout(), "Start the server with: openid-connect-server serve")
 	return nil
 }
 

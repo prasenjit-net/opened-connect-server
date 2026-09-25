@@ -6,12 +6,13 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import { readPreference } from "../lib/preferences";
 
-const COLLAPSE_KEY = "opened-connect-server-sidebar";
+const COLLAPSE_KEY = "openid-connect-server-sidebar";
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(COLLAPSE_KEY) === "collapsed",
+    () => readPreference(COLLAPSE_KEY) === "collapsed",
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { pathname } = useLocation();

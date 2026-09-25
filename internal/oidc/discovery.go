@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/oidc/capability"
+	"github.com/prasenjit-net/openid-connect-server/internal/oidc/capability"
 )
 
 // discoveryDocument is the subset of OpenID Connect Discovery 1.0 metadata

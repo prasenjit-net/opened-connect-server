@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 type oauthFailure struct{ code, description string }

@@ -18,8 +18,8 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 func TestDynamicRegistrationHTTPAuthorizationCodeFlow(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 	"github.com/spf13/viper"
 )
 
@@ -108,7 +108,7 @@ type OIDCConfig struct {
 
 func Default() Config {
 	return Config{
-		Storage: StorageConfig{Backend: "json", DataDir: "data", Postgres: PostgresConfig{MaxOpenConns: 20, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute, ConnectTimeout: 5 * time.Second, StatementTimeout: 10 * time.Second, SSLMode: "verify-full"}, MongoDB: MongoDBConfig{Database: "opened_connect_server", ConnectTimeout: 5 * time.Second, ServerSelectionTimeout: 5 * time.Second}},
+		Storage: StorageConfig{Backend: "json", DataDir: "data", Postgres: PostgresConfig{MaxOpenConns: 20, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute, ConnectTimeout: 5 * time.Second, StatementTimeout: 10 * time.Second, SSLMode: "verify-full"}, MongoDB: MongoDBConfig{Database: "openid_connect_server", ConnectTimeout: 5 * time.Second, ServerSelectionTimeout: 5 * time.Second}},
 		Auth:    AuthConfig{SessionTTL: 8 * time.Hour},
 		App: AppConfig{
 			Name:        "OpenID Connect Server",
@@ -130,7 +130,7 @@ func Default() Config {
 		},
 		UI: UIConfig{
 			DefaultTheme: "auto",
-			RepoURL:      "https://github.com/prasenjit-net/opened-connect-server",
+			RepoURL:      "https://github.com/prasenjit-net/openid-connect-server",
 			DevProxyURL:  "http://localhost:5173",
 		},
 		OIDC: OIDCConfig{
@@ -455,7 +455,7 @@ storage:
 #   dataDir: data
 #   mongodb:
 #     uri: ${APP_STORAGE_MONGODB_URI}
-#     database: opened_connect_server
+#     database: openid_connect_server
 #     connectTimeout: 5s
 #     serverSelectionTimeout: 5s # requires a transaction-capable replica set or sharded cluster
 
@@ -465,7 +465,7 @@ auth:
 
 ui:
   defaultTheme: auto
-  repoURL: https://github.com/prasenjit-net/opened-connect-server
+  repoURL: https://github.com/prasenjit-net/openid-connect-server
   devProxyURL: http://localhost:5173
 
 # oidc:

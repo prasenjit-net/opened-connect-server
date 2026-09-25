@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 // Registration credentials are accepted only in the header, never cookies,

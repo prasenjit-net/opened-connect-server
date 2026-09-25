@@ -39,7 +39,7 @@ storage:
 
   mongodb:
     uri: ${APP_STORAGE_MONGODB_URI}
-    database: opened_connect_server
+    database: openid_connect_server
     connectTimeout: 5s
     serverSelectionTimeout: 5s
     transactionTimeout: 10s
@@ -93,7 +93,7 @@ Do not support standalone MongoDB, best-effort multi-document writes, or distrib
 
 ## Migration and operational workflow
 
-1. Add `opened-connect-server storage status` to report selected backend and safe schema/migration status.
+1. Add `openid-connect-server storage status` to report selected backend and safe schema/migration status.
 2. Add an offline `storage export --backend json|postgres|mongodb` command that emits a versioned, encrypted-at-rest or operator-protected snapshot without raw passwords, tokens, client secrets, or signing keys in terminal output.
 3. Add `storage import` with preflight validation, target-empty checks, record counts/checksums, explicit `--replace-empty-target`, and a resumable migration journal. Do not perform dual writes or transparent live migration in the first release.
 4. Stop writers for the cutover, create a JSON backup, export, import into a fresh target, verify counts and representative state, change `storage.backend`, run a read-only health check, and start one instance. Roll back by restoring the JSON configuration and backup before accepting new writes.

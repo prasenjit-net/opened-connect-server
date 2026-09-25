@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/logging"
-	"github.com/prasenjit-net/opened-connect-server/internal/server"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/logging"
+	"github.com/prasenjit-net/openid-connect-server/internal/server"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 var (

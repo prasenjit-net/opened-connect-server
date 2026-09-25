@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 const testPassword = "correct horse battery staple"

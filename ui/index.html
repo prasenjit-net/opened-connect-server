@@ -18,7 +18,15 @@
       (function () {
         var mode = null;
         try {
-          mode = localStorage.getItem("opened-connect-server-theme");
+          mode = localStorage.getItem("openid-connect-server-theme");
+          // Migrate the previous project name before first paint.
+          if (mode === null) {
+            mode = localStorage.getItem("opened-connect-server-theme");
+            if (mode !== null) {
+              localStorage.setItem("openid-connect-server-theme", mode);
+              localStorage.removeItem("opened-connect-server-theme");
+            }
+          }
         } catch (e) {
           /* storage unavailable */
         }
