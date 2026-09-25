@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 var errMultipleResources = errors.New("multiple resources are not supported")

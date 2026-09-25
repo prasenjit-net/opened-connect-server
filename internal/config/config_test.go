@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 	"github.com/spf13/viper"
 )
 
@@ -255,7 +255,7 @@ func TestStorageBackendConfiguration(t *testing.T) {
 		{"postgres missing dsn", func(v *viper.Viper) { v.Set("storage.backend", "postgres") }, false},
 		{"postgres valid", func(v *viper.Viper) {
 			v.Set("storage.backend", "postgres")
-			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/openid")
 		}, true},
 		{"mongo missing uri", func(v *viper.Viper) { v.Set("storage.backend", "mongodb") }, false},
 		{"mongo valid", func(v *viper.Viper) {
@@ -264,14 +264,14 @@ func TestStorageBackendConfiguration(t *testing.T) {
 		}, true},
 		{"postgres sslmode disable outside development", func(v *viper.Viper) {
 			v.Set("storage.backend", "postgres")
-			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/openid")
 			v.Set("storage.postgres.sslMode", "disable")
 			v.Set("app.env", "production")
 			v.Set("app.url", "https://issuer.example")
 		}, false},
 		{"postgres sslmode verify-full outside development", func(v *viper.Viper) {
 			v.Set("storage.backend", "postgres")
-			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/opened")
+			v.Set("storage.postgres.dsn", "postgres://user:secret@db.example/openid")
 			v.Set("storage.postgres.sslMode", "verify-full")
 			v.Set("app.env", "production")
 			v.Set("app.url", "https://issuer.example")

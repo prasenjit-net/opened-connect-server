@@ -1,6 +1,6 @@
 package identity
 
-import "github.com/prasenjit-net/opened-connect-server/internal/oidc/capability"
+import "github.com/prasenjit-net/openid-connect-server/internal/oidc/capability"
 
 // auditMetadata reports whether a client's registered metadata is
 // compatible with the implemented OpenID Connect protocol surface. It

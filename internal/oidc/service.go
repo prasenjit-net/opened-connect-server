@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 // Config carries the resolved, validated OIDC settings a Service needs at

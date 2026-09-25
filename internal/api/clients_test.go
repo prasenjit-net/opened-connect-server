@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 func clientBody(t *testing.T, data []byte) map[string]any {

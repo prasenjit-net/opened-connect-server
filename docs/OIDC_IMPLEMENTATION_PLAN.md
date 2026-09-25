@@ -71,7 +71,7 @@ A single capability registry must drive discovery, runtime validation, and manag
 
 Proposed configuration adds `oidc.enabled`, `oidc.issuer`, token/transaction TTLs, capability flags, and key rotation settings. Validate issuer consistency with the application's public URL and secure-cookie configuration. Never derive issuer URLs from request `Host` or untrusted forwarded headers. Reject unsupported path-prefixed issuers at startup until their routing and discovery behavior are implemented.
 
-The `opened-connect-server init` command must provision the initial RSA private key and matching self-signed X.509 certificate for provider JWT signing. Use RS256 for the first delivery. The private key signs ID tokens and other provider-issued signed JWTs as those features are enabled; the certificate carries the corresponding public key. Initial access and refresh tokens remain opaque, as specified in section 7.
+The `openid-connect-server init` command must provision the initial RSA private key and matching self-signed X.509 certificate for provider JWT signing. Use RS256 for the first delivery. The private key signs ID tokens and other provider-issued signed JWTs as those features are enabled; the certificate carries the corresponding public key. Initial access and refresh tokens remain opaque, as specified in section 7.
 
 ### Initial signing material and command behavior
 

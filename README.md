@@ -2,7 +2,22 @@
 
 OpenID Connect Server is a Go application with an embedded React administration console. The console includes cookie-based login, admin user management, profiles, password changes, appearance settings, and the Grove theme from Lizard.
 
-Repository: https://github.com/prasenjit-net/opened-connect-server
+Repository: https://github.com/prasenjit-net/openid-connect-server
+
+## Upgrading from the previous repository name
+
+The repository, Go module, and executable are now named `openid-connect-server`.
+Update Git remotes to `https://github.com/prasenjit-net/openid-connect-server.git`
+and service definitions or scripts to use the new executable name. Keep the
+existing `storage.dataDir`: it contains identity data and encryption/signing keys.
+Saved browser theme and sidebar preferences migrate automatically.
+
+The MongoDB default for new installations is now `openid_connect_server`. If an
+existing installation used the previous default, explicitly set
+`storage.mongodb.database: opened_connect_server` (or
+`APP_STORAGE_MONGODB_DATABASE=opened_connect_server`) before upgrading to keep
+using that database. Changing the application name does not migrate database
+contents. Existing PostgreSQL DSNs remain valid without renaming their databases.
 
 ## What You Get
 
@@ -99,7 +114,7 @@ make lint-ui    # eslint for the React app
 
 ```bash
 make build
-./build/opened-connect-server serve
+./build/openid-connect-server serve
 ```
 
 The binary contains the compiled React app. No separate Node.js server is required in production.
@@ -149,8 +164,8 @@ Unknown API routes return a JSON 404. The old `/api/example` and `/api/meta` end
 There are no default accounts or passwords. Initialize the first administrator before signing in:
 
 ```sh
-./build/opened-connect-server init --admin-email admin@example.com --admin-name "Administrator"
-./build/opened-connect-server serve
+./build/openid-connect-server init --admin-email admin@example.com --admin-name "Administrator"
+./build/openid-connect-server serve
 ```
 
 The command prompts for a password without echoing it, then asks for confirmation. Passwords must contain 12–128 characters. For automation, pass `--password-stdin` and supply the password through stdin from a secret manager. Passwords are never accepted as command-line flags or printed. `--path` selects the project directory; `--data-dir` overrides the storage location on both `init` and `serve`.
@@ -158,7 +173,7 @@ The command prompts for a password without echoing it, then asks for confirmatio
 For a new project, initialization can also write the first OIDC and OAuth settings:
 
 ```sh
-./build/opened-connect-server init --admin-email admin@example.com \
+./build/openid-connect-server init --admin-email admin@example.com \
   --registration-enabled --refresh-tokens-enabled \
   --audience https://api.example.com \
   --audience-scope items:read --audience-scope items:write
@@ -230,7 +245,7 @@ storage:
   dataDir: data
   mongodb:
     uri: ${APP_STORAGE_MONGODB_URI}
-    database: opened_connect_server
+    database: openid_connect_server
     connectTimeout: 5s
     serverSelectionTimeout: 5s
 ```
@@ -253,12 +268,12 @@ auth:
   sessionTTL: 8h
   cookieSecure: true
 storage:
-  dataDir: /var/lib/opened-connect-server
+  dataDir: /var/lib/openid-connect-server
 ```
 
 Merge these settings into `config.yaml`. Outside `development`/`test`, startup requires an HTTPS public URL and forces Secure cookies. The server also adds HSTS for Secure-cookie deployments, frame denial, MIME-sniffing protection, and a same-origin referrer policy. Restrict access to the backend HTTP port to the reverse proxy. In development, HTTP cookies support localhost, and the configured Vite origin is allowed for API calls.
 
-The environment setting is `APP_APP_ENV` (not `APP_ENV`). Examples: `APP_APP_ENV=production`, `APP_APP_URL=https://identity.example.com`, `APP_STORAGE_DATADIR=/var/lib/opened-connect-server`.
+The environment setting is `APP_APP_ENV` (not `APP_ENV`). Examples: `APP_APP_ENV=production`, `APP_APP_URL=https://identity.example.com`, `APP_STORAGE_DATADIR=/var/lib/openid-connect-server`.
 
 Profiles support the [OpenID Connect standard claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims): name, given/family/middle names, nickname, preferred username, profile/picture/website URLs, email, gender, birthdate, time zone, locale, phone number, and the structured address. `sub` is derived from the immutable account ID; `updated_at` is a server-generated Unix timestamp. Existing accounts remain compatible.
 
@@ -303,7 +318,7 @@ Set `oidc.enabled: true` in `config.yaml` (or `APP_OIDC_ENABLED=true`) to serve 
 | `POST /token` | Code exchange; form-encoded, OAuth-shaped errors |
 | `GET`/`POST /userinfo` | Bearer-token claims, scope-gated |
 
-`./build/opened-connect-server init` provisions the RSA 3072-bit signing key and self-signed certificate under `data/signing-keys/` the first time OIDC is enabled, alongside the identity store; rerunning `init` (including `--force`) never replaces a valid existing key, and on an already-initialized install it now provisions only the missing signing material without touching users or passwords. `keys status` reports the active/retired keys and expiry (never private material); `keys rotate` generates and activates a new key while keeping the retired one published in `/jwks` for verification of still-unexpired tokens. `serve` fails closed at startup if OIDC is enabled and the signing material is missing, corrupt, mismatched, or expired — it never falls back to an ephemeral key.
+`./build/openid-connect-server init` provisions the RSA 3072-bit signing key and self-signed certificate under `data/signing-keys/` the first time OIDC is enabled, alongside the identity store; rerunning `init` (including `--force`) never replaces a valid existing key, and on an already-initialized install it now provisions only the missing signing material without touching users or passwords. `keys status` reports the active/retired keys and expiry (never private material); `keys rotate` generates and activates a new key while keeping the retired one published in `/jwks` for verification of still-unexpired tokens. `serve` fails closed at startup if OIDC is enabled and the signing material is missing, corrupt, mismatched, or expired — it never falls back to an ephemeral key.
 
 Login/consent reuse the existing form-login flow: `/authorize` persists a short-lived transaction and a dedicated browser-binding cookie, then continues at `/oidc/continue` in the React app (a consent screen or an immediate redirect), independent of the admin console's session-authenticated pages. `prompt=none` requests never render UI — they redirect straight back to the relying party with a result or an `interaction_required`-style error. Consent is recorded per user/client/scope set at the client's current metadata revision; a metadata change invalidates prior consent.
 

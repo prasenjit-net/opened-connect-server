@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/config"
+	"github.com/prasenjit-net/openid-connect-server/internal/config"
 )
 
 func New(cfg config.LoggingConfig) *slog.Logger {

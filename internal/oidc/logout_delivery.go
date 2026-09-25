@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
 )
 
 // RunLogoutWorker is tied to server lifetime; leases survive process restarts.

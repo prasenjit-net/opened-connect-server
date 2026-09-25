@@ -5,12 +5,12 @@ before:
     - npm run build --prefix ui
 
 builds:
-  - binary: opened-connect-server
+  - binary: openid-connect-server
     ldflags:
       - -s -w
-      - -X github.com/prasenjit-net/opened-connect-server/internal/version.Version={{ .Version }}
-      - -X github.com/prasenjit-net/opened-connect-server/internal/version.Commit={{ .Commit }}
-      - -X github.com/prasenjit-net/opened-connect-server/internal/version.BuildDate={{ .Date }}
+      - -X github.com/prasenjit-net/openid-connect-server/internal/version.Version={{ .Version }}
+      - -X github.com/prasenjit-net/openid-connect-server/internal/version.Commit={{ .Commit }}
+      - -X github.com/prasenjit-net/openid-connect-server/internal/version.BuildDate={{ .Date }}
     goos:
       - linux
       - darwin

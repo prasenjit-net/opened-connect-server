@@ -13,10 +13,10 @@ func TestPostgresDSNWithSSLMode(t *testing.T) {
 		mode string
 		want string
 	}{
-		{"URL replaces existing mode", "postgres://user:secret@db.example/opened?sslmode=disable", "verify-full", "postgres://user:secret@db.example/opened?sslmode=verify-full"},
-		{"URL adds mode", "postgresql://db.example/opened", "require", "postgresql://db.example/opened?sslmode=require"},
-		{"keyword replaces mode", "host=db.example dbname=opened sslmode=disable", "verify-ca", "host=db.example dbname=opened sslmode=disable sslmode=verify-ca"},
-		{"empty mode preserves DSN", "host=db.example dbname=opened", "", "host=db.example dbname=opened"},
+		{"URL replaces existing mode", "postgres://user:secret@db.example/openid?sslmode=disable", "verify-full", "postgres://user:secret@db.example/openid?sslmode=verify-full"},
+		{"URL adds mode", "postgresql://db.example/openid", "require", "postgresql://db.example/openid?sslmode=require"},
+		{"keyword replaces mode", "host=db.example dbname=openid sslmode=disable", "verify-ca", "host=db.example dbname=openid sslmode=disable sslmode=verify-ca"},
+		{"empty mode preserves DSN", "host=db.example dbname=openid", "", "host=db.example dbname=openid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := postgresDSNWithSSLMode(tc.dsn, tc.mode)

@@ -79,7 +79,7 @@ describe("Layout sidebar collapse", () => {
     await user.click(screen.getByLabelText("Toggle sidebar"));
 
     expect(sidebarNavLabel("Dashboard").className).toContain("md:hidden");
-    expect(window.localStorage.getItem("opened-connect-server-sidebar")).toBe("collapsed");
+    expect(window.localStorage.getItem("openid-connect-server-sidebar")).toBe("collapsed");
   });
 
   it("expands again on a second hamburger click", async () => {
@@ -91,11 +91,11 @@ describe("Layout sidebar collapse", () => {
     await user.click(screen.getByLabelText("Toggle sidebar"));
 
     expect(sidebarNavLabel("Dashboard").className).not.toContain("md:hidden");
-    expect(window.localStorage.getItem("opened-connect-server-sidebar")).toBe("expanded");
+    expect(window.localStorage.getItem("openid-connect-server-sidebar")).toBe("expanded");
   });
 
   it("restores a previously collapsed state on mount", async () => {
-    window.localStorage.setItem("opened-connect-server-sidebar", "collapsed");
+    window.localStorage.setItem("openid-connect-server-sidebar", "collapsed");
     renderLayout();
     await screen.findByLabelText("Toggle sidebar");
     expect(sidebarNavLabel("Dashboard").className).toContain("md:hidden");
@@ -115,6 +115,6 @@ describe("Layout sidebar collapse", () => {
     expect(aside.className).toContain("translate-x-0");
     // Collapse state (desktop-only concept) must be untouched by the
     // mobile drawer toggle.
-    expect(window.localStorage.getItem("opened-connect-server-sidebar")).toBeNull();
+    expect(window.localStorage.getItem("openid-connect-server-sidebar")).toBeNull();
   });
 });

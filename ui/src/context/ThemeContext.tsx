@@ -12,10 +12,11 @@ import {
   type ReactNode,
 } from "react";
 import { useConfig } from "./ConfigContext";
+import { readPreference } from "../lib/preferences";
 
 export type ThemeMode = "light" | "dark" | "auto";
 
-const STORAGE_KEY = "opened-connect-server-theme";
+const STORAGE_KEY = "openid-connect-server-theme";
 
 interface ThemeContextValue {
   mode: ThemeMode;
@@ -33,7 +34,7 @@ const resolve = (mode: ThemeMode): "light" | "dark" =>
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const config = useConfig();
   const [mode, setModeState] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = readPreference(STORAGE_KEY);
     if (saved === "light" || saved === "dark" || saved === "auto") return saved;
     const fallback = config.ui.defaultTheme;
     return fallback === "light" || fallback === "dark" ? fallback : "auto";

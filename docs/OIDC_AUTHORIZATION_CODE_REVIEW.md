@@ -26,7 +26,7 @@ Operational details, including `oidc.allowedOrigins` and the request limits, are
 
 ### Verification after corrections
 
-- `GOCACHE=/tmp/opened-connect-go-cache go test ./...` passed.
+- `GOCACHE=/tmp/openid-connect-go-cache go test ./...` passed.
 - Race-enabled tests passed for `internal/oidc/...`, `internal/identity`, `internal/api`, `internal/server`, and `internal/config`; OIDC/config race tests were rerun after the final changes.
 - `go vet ./...` and `git diff --check` passed.
 - UI: all 61 tests passed; TypeScript/Vite production build passed; ESLint passed with six existing Fast Refresh warnings in unchanged context modules. Existing OIDC UI tests still print React `act` warnings.

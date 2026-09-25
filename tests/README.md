@@ -6,7 +6,7 @@ A browser-driven end-to-end suite for the OpenID Connect provider. **Manual only
 
 It targets whatever OpenID Connect server is **already running** at a URL you tell it about. Bring your own:
 
-- Your normal dev instance (`make dev` / `opened-connect-server serve`), with `oidc.enabled: true` in its config, **or**
+- Your normal dev instance (`make dev` / `openid-connect-server serve`), with `oidc.enabled: true` in its config, **or**
 - A disposable, throwaway instance — a helper script is provided for this:
 
   ```sh

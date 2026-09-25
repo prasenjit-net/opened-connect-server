@@ -13,14 +13,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 WORKDIR="$TESTS_DIR/.server-workspace"
-BIN="$ROOT_DIR/build/opened-connect-server"
+BIN="$ROOT_DIR/build/openid-connect-server"
 
 PORT="${E2E_PORT:-8099}"
 ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-e2e-admin@example.test}"
 ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-e2e admin password not a real secret}"
 
 if [ ! -x "$BIN" ]; then
-  echo "==> Building opened-connect-server binary (not found at $BIN)" >&2
+  echo "==> Building openid-connect-server binary (not found at $BIN)" >&2
   (cd "$ROOT_DIR" && make build-go) >&2
 fi
 

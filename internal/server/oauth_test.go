@@ -14,8 +14,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/prasenjit-net/opened-connect-server/internal/identity"
-	"github.com/prasenjit-net/opened-connect-server/internal/version"
+	"github.com/prasenjit-net/openid-connect-server/internal/identity"
+	"github.com/prasenjit-net/openid-connect-server/internal/version"
 )
 
 func TestOAuthHTTPRefreshAndMachineLifecycle(t *testing.T) {
