@@ -76,7 +76,7 @@ jobs:
           restore-keys: node-modules-
 
       - name: Install UI dependencies
-        run: npm ci --prefix ui
+        run: npm ci --ignore-scripts --prefix ui
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6

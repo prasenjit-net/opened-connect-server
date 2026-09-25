@@ -40,7 +40,8 @@ func (h *authHandler) cookie(w http.ResponseWriter, token string, expires time.T
 		age = -1
 		expires = time.Unix(1, 0)
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: h.cfg.Auth.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: age, Expires: expires})
+	http.SetCookie(w, &http.Cookie{ // NOSONAR: config.Load forces Secure for HTTPS and non-development/test environments; HTTP development is intentional.
+		Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: h.cfg.Auth.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: age, Expires: expires})
 }
 func requestHash(r *http.Request) string {
 	c, err := r.Cookie(cookieName)

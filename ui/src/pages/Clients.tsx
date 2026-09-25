@@ -16,7 +16,7 @@ export default function ClientsPage() {
   <section className="card">
    <form className="mb-4 flex items-end gap-3" onSubmit={(e) => { e.preventDefault(); search(); }}>
     <label className="flex flex-1 flex-col gap-1.5 text-sm font-medium">Search clients<input className="input" type="search" maxLength={254} value={draft.q} onChange={(e) => setDraft({ q: e.target.value })} placeholder="Name or client ID" /></label>
-    <button className="btn btn-secondary" disabled={pending}>{pending ? "Searching…" : "Search"}</button>
+    <button type="submit" className="btn btn-secondary" disabled={pending}>{pending ? "Searching…" : "Search"}</button>
    </form>
    {error && <p role="alert" className="mb-4 text-sm text-err">{error}</p>}
    {!searched && <p className="py-10 text-center text-sm text-ink-muted">Click Search to find clients. Leave the field empty to find all clients.</p>}

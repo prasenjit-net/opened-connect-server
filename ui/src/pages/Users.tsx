@@ -31,7 +31,7 @@ export default function UsersPage() {
             <option value="">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option>
           </select>
         </label>
-        <button className="btn btn-secondary" disabled={pending}>{pending ? "Searching…" : "Search"}</button>
+        <button type="submit" className="btn btn-secondary" disabled={pending}>{pending ? "Searching…" : "Search"}</button>
       </form>
       {error && <p role="alert" className="mb-4 rounded-lg bg-err-soft p-3 text-sm text-err">{error}</p>}
       {!searched && <p className="py-10 text-center text-sm text-ink-muted">Enter search criteria and click Search. Leave the fields empty to find all users.</p>}
