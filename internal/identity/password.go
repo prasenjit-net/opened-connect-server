@@ -11,7 +11,8 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const passwordPrefix = "$argon2id$v=19$m=19456,t=2,p=1$"
+// argon2idPrefix identifies the PHC hash format and public Argon2 parameters; it is not a credential.
+const argon2idPrefix = "$argon2id$v=19$m=19456,t=2,p=1$"
 
 func ValidatePassword(password string) error {
 	n := utf8.RuneCountInString(password)
@@ -34,14 +35,14 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 	key := argon2.IDKey([]byte(password), salt, 2, 19456, 1, 32)
-	return passwordPrefix + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key), nil
+	return argon2idPrefix + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key), nil
 }
 
 func VerifyPassword(encoded, password string) bool {
-	if len(password) > 512 || !strings.HasPrefix(encoded, passwordPrefix) {
+	if len(password) > 512 || !strings.HasPrefix(encoded, argon2idPrefix) {
 		return false
 	}
-	parts := strings.Split(strings.TrimPrefix(encoded, passwordPrefix), "$")
+	parts := strings.Split(strings.TrimPrefix(encoded, argon2idPrefix), "$")
 	if len(parts) != 2 {
 		return false
 	}

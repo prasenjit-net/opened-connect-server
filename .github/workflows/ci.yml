@@ -42,7 +42,7 @@ jobs:
         run: go mod download
 
       - name: Install UI dependencies
-        run: npm ci --prefix ui
+        run: npm ci --ignore-scripts --prefix ui
 
       # Build UI first — go:embed requires ui/dist to be populated before
       # go vet / go test compile the package.
